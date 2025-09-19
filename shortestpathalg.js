@@ -42,7 +42,7 @@ class myScene extends Phaser.Scene {
 
     //create a bunch of edges
     const edgeNumber = Math.floor(
-      Math.random() * (this.n * 4 - this.n) + this.n
+      Math.random() * (this.n * 2 - this.n) + this.n
     );
     //console.log(edgeNumber)
 
@@ -53,7 +53,11 @@ class myScene extends Phaser.Scene {
       //console.log(randomPointB)
 
       function edgeExists(edgeList, a, b) {
-        return edgeList.some((edge) => edge.pointA === a && edge.pointB === b);
+        return edgeList.some(
+          (edge) =>
+            (edge.pointA === a && edge.pointB === b) ||
+            (edge.pointA === b && edge.pointB === a)
+        );
       }
 
       //if valid then push to edgelist
@@ -82,32 +86,76 @@ class myScene extends Phaser.Scene {
 
     //run shortest path alg
     const source = pointsList[0];
-    const target = pointsList[Math.floor(Math.random() * (pointsList.length-1)) + 1]; //exclude 0
+    const target =
+      pointsList[Math.floor(Math.random() * (pointsList.length - 1)) + 1]; //exclude 0
 
-    dijkstra()
-    
+    dijkstra();
+
     function dijkstra() {
-      console.log("sd")
+      console.log("sd");
       source.setDist(0);
-      
+
       //visual
       source.source();
       target.target();
-      
+
       //these are unvisited
       let unvisitedList = pointsList.slice();
-      
-      //loop
-      //not done
-      //while (unvisited.length > 0) {}
-      
-      
-      
+
+      //loop while there are still vertices to look
+      while (unvisitedList.length > 0) {
+        let minIndex = 0;
+        for (let i = 1; i < unvisitedList.length; i++) {
+          if (unvisitedList[i].distance < unvisitedList[minIndex].distance)
+            minIndex = i;
+        }
+
+        //remove the min distance
+        let u = unvisitedList.splice(minIndex, 1)[0];
+
+        if (u.distance === Infinity) break;
+        if (u !== source && u !== target) u.visit();
+        if (u === target) break;
+
+        for (let e of u.adjList) {
+          
+          //v is the other endpoint
+          let v = e.pointA === u ? e.pointB : e.pointA;
+          //calc new distance
+          let alt = u.distance + e.weight;
+          //if smaller than current distance
+          if (alt < v.distance) {
+            v.distance = alt;
+            v.prev = u;
+          }
+        }
+      }
+
+      let path = [];
+      let u = target;
+
+      while (u) {
+        path.push(u);
+        if (u !== source && u !== target) {
+          u.select();
+        }
+        u = u.prev;
+      }
+      path.reverse();
+
+      for (let i = 0; i < path.length - 1; i++) {
+        let a = path[i];
+        let b = path[i + 1];
+        let e = a.adjList.find(
+          (edge) =>
+            (edge.pointA === a && edge.pointB === b) ||
+            (edge.pointA === b && edge.pointB === a)
+        );
+        if (e) {
+          e.line.setStrokeStyle(4, 0xffff00); 
+        }
+      }
     }
-    
-    
-    
-    
   }
 
   update() {}
@@ -117,7 +165,7 @@ class vertex {
   constructor(coordinates = Phaser.Math.Vector2()) {
     this.coordinates = coordinates;
     this.circle = null;
-    
+
     //alg stuff
     this.visited = false;
     this.prev = null;
@@ -138,7 +186,7 @@ class vertex {
   visit() {
     this.visited = true;
     if (this.circle) {
-      this.circle.setFillStyle(0xff0000);
+      this.circle.setFillStyle(0xffe3fb);
       this.circle.setDepth(2);
     }
   }
@@ -146,8 +194,15 @@ class vertex {
   unvisit() {
     this.visited = false;
     if (this.circle) {
-      this.circle.setFillStyle(0xfafafa);
+      this.circle.setFillStyle(0xffffff);
       this.circle.setDepth(1);
+    }
+  }
+
+  select() {
+    if (this.circle) {
+      this.circle.setFillStyle(0xff00ff);
+      this.circle.setDepth(2);
     }
   }
 
@@ -168,7 +223,7 @@ class vertex {
   addToAdjList(edge) {
     this.adjList.push(edge);
   }
-  
+
   setDist(number) {
     this.distance = number;
   }
