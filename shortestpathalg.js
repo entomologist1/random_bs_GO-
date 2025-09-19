@@ -42,7 +42,7 @@ class myScene extends Phaser.Scene {
 
     //create a bunch of edges
     const edgeNumber = Math.floor(
-      Math.random() * (this.n * 2 - this.n) + this.n
+      Math.random() * (this.n * 3 - this.n) + this.n
     );
     //console.log(edgeNumber)
 
@@ -118,7 +118,6 @@ class myScene extends Phaser.Scene {
         if (u === target) break;
 
         for (let e of u.adjList) {
-          
           //v is the other endpoint
           let v = e.pointA === u ? e.pointB : e.pointA;
           //calc new distance
@@ -152,13 +151,20 @@ class myScene extends Phaser.Scene {
             (edge.pointA === b && edge.pointB === a)
         );
         if (e) {
-          e.line.setStrokeStyle(4, 0xffff00); 
+          e.line.setStrokeStyle(4, 0xffff00);
         }
       }
+
+      console.log(
+        path.map((v) => ({
+          x: v.coordinates.x,
+          y: v.coordinates.y,
+          distance: v.distance
+        }))
+      );
     }
   }
 
-  update() {}
 }
 
 class vertex {
