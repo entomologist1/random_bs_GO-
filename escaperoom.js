@@ -6,6 +6,7 @@ i still need to make objects work like in general. and also make an inventory. a
 
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 600;
+let PLAYER_INVENTORY = [];
 
 class mainScene extends Phaser.Scene {
   constructor() {
@@ -154,14 +155,23 @@ class mainScene extends Phaser.Scene {
 }
 
 class AreaObject {
-  constructor(type, spriteKey, spritePath, position) {
+  constructor(
+    type, //type of object
+    spriteKey, //generic stuff
+    spritePath,
+    position
+  ) {
     this.type = type;
+    this.interactionEnabled = true;
+    this.interactionOptions = ["Inspect"];
+
     this.spriteKey = spriteKey;
     this.spritePath = spritePath;
     this.position = position;
     this.sprite = null;
   }
 
+  //spawn in scene
   spawn(scene) {
     this.sprite = scene.add.sprite(
       this.position.x,
@@ -170,8 +180,13 @@ class AreaObject {
     );
   }
 
+  //if interactionEnabled is set to true, open a minimenu (rectangle 100 by min100) based on interactionOptions. in the future this will trigger interactInspect&others
   interact() {
     console.log("interactable");
+  }
+
+  interactInspect() {
+    console.log("inspectable");
   }
 
   destroy() {
