@@ -16,7 +16,7 @@ class mainScene extends Phaser.Scene {
     this.currentAreaIndex = 1;
     this.areaObjects = [];
     this.scrollSpeed = 8; // how fast cameraTarget moves
-    this.edgeThreshold = 50; // px from edge before scrolling starts
+    this.edgeThreshold = 75; // px from edge before scrolling starts
   }
 
   preload() {
@@ -31,6 +31,7 @@ class mainScene extends Phaser.Scene {
   create() {
     this.reloadNewArea(this.currentAreaIndex);
 
+    //DEBUGGING lol
     this.input.keyboard.on("keydown-RIGHT", () => {
       this.currentAreaIndex++;
       if (this.currentAreaIndex > Object.keys(areaInfo).length) {
@@ -44,19 +45,23 @@ class mainScene extends Phaser.Scene {
     this.updateCameraFollow();
   }
  
-  reloadNewArea(index) {
+  reloadNewArea(index, spawnPoint = 0) {
     this.loadArea(index);
     this.loadAreaObjects(index);
     this.loadPlayerMovement?.();
-    this.setupCamera();
+    this.setupCamera(index, spawnPoint);
   }
 
-  setupCamera() {
+  setupCamera(index, spawnPointIndex = 0) {
+    const area = areaInfo[index];
     this.camera = this.cameras.main;
+    let currentSpawn = area.spawnPoints[spawnPointIndex];
 
     //current area's width/height
     const bgWidth = this.backgroundImage.width;
     const bgHeight = this.backgroundImage.height;
+    
+    console.log(currentSpawn, bgWidth  / 2, bgHeight  / 2)
 
     //bounds for clamping
     this.areaBounds = new Phaser.Geom.Rectangle(0, 0, bgWidth, bgHeight);
@@ -69,12 +74,12 @@ class mainScene extends Phaser.Scene {
 
     //cameraTarget for camera to follow
     if (!this.cameraTarget) {
-      this.cameraTarget = this.add.zone(GAME_WIDTH / 2, GAME_HEIGHT / 2, 1, 1);
+      this.cameraTarget = this.add.zone(bgWidth  / 2, bgHeight  / 2, 1, 1);
       this.cameraTarget.setOrigin(0.5, 0.5);
       this.camera.startFollow(this.cameraTarget, true, 0.15, 0.15);
     } else {
-      this.cameraTarget.x = GAME_WIDTH / 2;
-      this.cameraTarget.y = GAME_HEIGHT / 2;
+      this.cameraTarget.x = currentSpawn.x;
+      this.cameraTarget.y = currentSpawn.y;
     }
   }
 
@@ -153,7 +158,7 @@ class AreaObject {
     this.type = type;
     this.spriteKey = spriteKey;
     this.spritePath = spritePath;
-    this.position = position; // Phaser.Math.Vector2
+    this.position = position; 
     this.sprite = null;
   }
 
@@ -181,11 +186,13 @@ class Area {
   constructor(
     areaName = "defaultName",
     background = "defaultBackground.png",
-    objects = []
+    objects = [],
+    spawnPoints = [new Phaser.Math.Vector2(0, 0)], //default spawn 
   ) {
     this.areaName = areaName;
     this.background = background;
     this.objects = objects;
+    this.spawnPoints = spawnPoints;
   }
 }
 
@@ -206,7 +213,8 @@ let areaInfo = {
         "assets/chest.png",
         new Phaser.Math.Vector2(500, 400)
       )
-    ]
+    ],
+    [new Phaser.Math.Vector2(1000, 1000)]
   ),
   2: new Area(
     "area two",
@@ -218,7 +226,8 @@ let areaInfo = {
         "assets/npc2.png",
         new Phaser.Math.Vector2(250, 250)
       )
-    ]
+    ],
+    [new Phaser.Math.Vector2(0, 500)]
   ),
   3: new Area(
     "area three",
@@ -230,7 +239,8 @@ let areaInfo = {
         "assets/potion.png",
         new Phaser.Math.Vector2(400, 500)
       )
-    ]
+    ],
+    [new Phaser.Math.Vector2(200, 0)]
   )
 };
 
@@ -244,5 +254,4 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
-
 
