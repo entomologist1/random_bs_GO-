@@ -44,7 +44,7 @@ class mainScene extends Phaser.Scene {
   update() {
     this.updateCameraFollow();
   }
- 
+
   reloadNewArea(index, spawnPoint = 0) {
     this.loadArea(index);
     this.loadAreaObjects(index);
@@ -60,8 +60,8 @@ class mainScene extends Phaser.Scene {
     //current area's width/height
     const bgWidth = this.backgroundImage.width;
     const bgHeight = this.backgroundImage.height;
-    
-    console.log(currentSpawn, bgWidth  / 2, bgHeight  / 2)
+
+    console.log(currentSpawn, bgWidth / 2, bgHeight / 2);
 
     //bounds for clamping
     this.areaBounds = new Phaser.Geom.Rectangle(0, 0, bgWidth, bgHeight);
@@ -74,7 +74,7 @@ class mainScene extends Phaser.Scene {
 
     //cameraTarget for camera to follow
     if (!this.cameraTarget) {
-      this.cameraTarget = this.add.zone(bgWidth  / 2, bgHeight  / 2, 1, 1);
+      this.cameraTarget = this.add.zone(bgWidth / 2, bgHeight / 2, 1, 1);
       this.cameraTarget.setOrigin(0.5, 0.5);
       this.camera.startFollow(this.cameraTarget, true, 0.15, 0.15);
     } else {
@@ -158,7 +158,7 @@ class AreaObject {
     this.type = type;
     this.spriteKey = spriteKey;
     this.spritePath = spritePath;
-    this.position = position; 
+    this.position = position;
     this.sprite = null;
   }
 
@@ -187,12 +187,43 @@ class Area {
     areaName = "defaultName",
     background = "defaultBackground.png",
     objects = [],
-    spawnPoints = [new Phaser.Math.Vector2(0, 0)], //default spawn 
+    spawnPoints = [new Phaser.Math.Vector2(0, 0)] //default spawn
   ) {
     this.areaName = areaName;
     this.background = background;
     this.objects = objects;
     this.spawnPoints = spawnPoints;
+  }
+}
+
+class Player {
+  constructor(inputGiven = null, mode = "default") {
+    this.inputGiven = inputGiven; //player, game, null
+    this.mode = mode;
+  }
+
+  move() {
+    if (this.inputGiven) {
+      console.log("playerMovement active, move depending on mode");
+    }
+  }
+
+  switchMode() {
+    if (this.inputGiven) {
+      console.log("switchMode triggered, change spy/crouch/normal mode");
+    }
+  }
+
+  togglePlayer() {
+    if (this.inputGiven) {
+      console.log("togglePlayer triggered, switch to player input");
+    }
+  }
+
+  untogglePlayer() {
+    if (this.inputGiven) {
+      console.log("untogglePlayer triggered, switch to game/no input");
+    }
   }
 }
 
@@ -254,4 +285,3 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
-
