@@ -8,6 +8,75 @@ const GAME_WIDTH = 800;
 const GAME_HEIGHT = 600;
 let PLAYER_INVENTORY = [];
 
+//manager for area objs
+class ObjectManager {
+  constructor(scene) {
+    this.scene = scene; 
+    this.objects = [];
+  }
+
+  addObject(areaObject) {
+    if (!(areaObject instanceof AreaObject)) {
+      console.warn("must be area obj");
+      return;
+    }
+    areaObject.spawn(this.scene);
+    this.objects.push(areaObject);
+    return areaObject;
+  }
+
+  moveObject(areaObject, newPosition) {
+    if (!areaObject.sprite) {
+      console.warn("area obj not found");
+      return;
+    }
+    areaObject.position = newPosition;
+    areaObject.sprite.setPosition(newPosition.x, newPosition.y);
+  }
+
+  removeObject(areaObject) {
+    if (!areaObject.sprite) {
+      console.warn("area obj not found");
+      return;
+    }
+    const i = this.objects.indexOf(areaObject);
+    if (i !== -1) {
+      areaObject.destroy();
+      this.objects.splice(i, 1);
+    }
+  }
+
+  enableInteraction(areaObject) {
+    if (!areaObject.sprite) {
+      console.warn("area obj not found");
+      return;
+    }
+    areaObject.interactionEnabled = true;
+  }
+
+  disableInteraction(areaObject) {
+    if (!areaObject.sprite) {
+      console.warn("area obj not found");
+      return;
+    }
+    areaObject.interactionEnabled = false;
+  }
+
+  getObjectsByType(type) {
+    return this.objects.filter(o => o.type === type);
+  }
+
+  getObjectByKey(spriteKey) {
+    return this.objects.find(o => o.spriteKey === spriteKey);
+  }
+
+  clearAll() {
+    this.objects.forEach(o => o.destroy());
+    this.objects = [];
+  }
+}
+
+//general phaser scene
 class mainScene extends Phaser.Scene {
   constructor() {
     super("mainScene");
@@ -15,12 +84,12 @@ class mainScene extends Phaser.Scene {
 
   init() {
     this.currentAreaIndex = 1;
-    this.areaObjects = [];
-    this.scrollSpeed = 8; // how fast cameraTarget moves
-    this.edgeThreshold = 75; // px from edge before scrolling starts
+    this.scrollSpeed = 8;
+    this.edgeThreshold = 75;
   }
 
   preload() {
+    //this is just laoding all area images + objs images
     for (const [key, area] of Object.entries(areaInfo)) {
       this.load.image("bg" + key, area.background);
       for (const obj of area.objects) {
@@ -30,9 +99,13 @@ class mainScene extends Phaser.Scene {
   }
 
   create() {
+    //create the objectManager (this handles all areas)
+    this.objectManager = new ObjectManager(this);
+
+    //load first area (by default/init its 1)
     this.reloadNewArea(this.currentAreaIndex);
 
-    //DEBUGGING lol
+    //DEBUG: cycle areas  right arrow
     this.input.keyboard.on("keydown-RIGHT", () => {
       this.currentAreaIndex++;
       if (this.currentAreaIndex > Object.keys(areaInfo).length) {
@@ -46,25 +119,28 @@ class mainScene extends Phaser.Scene {
     this.updateCameraFollow();
   }
 
-  reloadNewArea(index, spawnPoint = 0) {
+  //handles moving between areas 
+  reloadNewArea(index, spawnPoint = 0) { //default spawn is the first one on list
     this.loadArea(index);
     this.loadAreaObjects(index);
     this.loadPlayerMovement?.();
     this.setupCamera(index, spawnPoint);
   }
-
+  
+  //these are helpers for reloadNewArea aka my personal checklist lol
+  
   setupCamera(index, spawnPointIndex = 0) {
+    //camera follows a zone tied to mouse and bound by bg width/height
+    //
+    
     const area = areaInfo[index];
     this.camera = this.cameras.main;
     let currentSpawn = area.spawnPoints[spawnPointIndex];
 
-    //current area's width/height
     const bgWidth = this.backgroundImage.width;
     const bgHeight = this.backgroundImage.height;
 
-    console.log(currentSpawn, bgWidth / 2, bgHeight / 2);
-
-    //bounds for clamping
+    //camera bounds
     this.areaBounds = new Phaser.Geom.Rectangle(0, 0, bgWidth, bgHeight);
     this.camera.setBounds(
       this.areaBounds.x,
@@ -73,9 +149,10 @@ class mainScene extends Phaser.Scene {
       this.areaBounds.height
     );
 
-    //cameraTarget for camera to follow
+    //create/move camera target
     if (!this.cameraTarget) {
-      this.cameraTarget = this.add.zone(bgWidth / 2, bgHeight / 2, 1, 1);
+      //this.cameraTarget = this.add.zone(bgWidth / 2, bgHeight / 2, 1, 1); //this sets to center of bg image
+      this.cameraTarget = this.add.zone(currentSpawn.x, currentSpawn.y, 1, 1); //this sets to whatever spawnpoint is chosen
       this.cameraTarget.setOrigin(0.5, 0.5);
       this.camera.startFollow(this.cameraTarget, true, 0.15, 0.15);
     } else {
@@ -85,23 +162,19 @@ class mainScene extends Phaser.Scene {
   }
 
   updateCameraFollow() {
+    //this moves the zone whenever pointer is at an edge
+    
     if (!this.input.activePointer) return;
     const pointer = this.input.activePointer;
+    let moveX = 0, moveY = 0;
 
-    let moveX = 0;
-    let moveY = 0;
-
-    // detect edges
     if (pointer.x < this.edgeThreshold) moveX = -this.scrollSpeed;
-    else if (pointer.x > GAME_WIDTH - this.edgeThreshold)
-      moveX = this.scrollSpeed;
+    else if (pointer.x > GAME_WIDTH - this.edgeThreshold) moveX = this.scrollSpeed;
 
     if (pointer.y < this.edgeThreshold) moveY = -this.scrollSpeed;
-    else if (pointer.y > GAME_HEIGHT - this.edgeThreshold)
-      moveY = this.scrollSpeed;
+    else if (pointer.y > GAME_HEIGHT - this.edgeThreshold) moveY = this.scrollSpeed;
 
-    // move cameraTarget and clamp to current area's bounds
-    if (moveX !== 0 || moveY !== 0) {
+    if (moveX || moveY) {
       this.cameraTarget.x = Phaser.Math.Clamp(
         this.cameraTarget.x + moveX,
         this.areaBounds.x + GAME_WIDTH / 2,
@@ -116,51 +189,43 @@ class mainScene extends Phaser.Scene {
   }
 
   loadArea(index) {
+    //area loading lol
+    
     const area = areaInfo[index];
     if (!area) return;
 
+    //destroy the old background images
     if (this.backgroundImage) this.backgroundImage.destroy();
     if (this.areaText) this.areaText.destroy();
 
-    this.backgroundImage = this.add.image(0, 0, "bg" + index).setOrigin(0, 0); // top-left origin for bounds calculations
-
-    this.areaText = this.add
-      .text(20, 20, area.areaName, {
-        fontSize: "24px",
-        fill: "#fff"
-      })
-      .setScrollFactor(0);
+    //and make current one
+    this.backgroundImage = this.add.image(0, 0, "bg" + index).setOrigin(0, 0);
+    this.areaText = this.add.text(20, 20, area.areaName, {
+      fontSize: "24px", fill: "#fff"
+    }).setScrollFactor(0);
   }
 
   loadAreaObjects(index) {
+    //loading objs via objectManager
     const area = areaInfo[index];
     if (!area) return;
 
-    if (this.areaObjects) {
-      this.areaObjects.forEach((obj) => obj.destroy());
-    }
-    this.areaObjects = [];
-
+    this.objectManager.clearAll();
     for (const obj of area.objects) {
-      obj.spawn(this);
-      this.areaObjects.push(obj);
+      this.objectManager.addObject(obj);
     }
+
   }
 
   loadPlayerMovement() {
+    //ill do this later
     console.log("Player movement here");
   }
-
-  shutdown() {}
 }
 
+//area & etc classes 
 class AreaObject {
-  constructor(
-    type, //type of object
-    spriteKey, //generic stuff
-    spritePath,
-    position
-  ) {
+  constructor(type, spriteKey, spritePath, position) {
     this.type = type;
     this.interactionEnabled = true;
     this.interactionOptions = ["Inspect"];
@@ -171,7 +236,6 @@ class AreaObject {
     this.sprite = null;
   }
 
-  //spawn in scene
   spawn(scene) {
     this.sprite = scene.add.sprite(
       this.position.x,
@@ -180,14 +244,8 @@ class AreaObject {
     );
   }
 
-  //if interactionEnabled is set to true, open a minimenu (rectangle 100 by min100) based on interactionOptions. in the future this will trigger interactInspect&others
-  interact() {
-    console.log("interactable");
-  }
-
-  interactInspect() {
-    console.log("inspectable");
-  }
+  interact() { console.log("interactable"); }
+  interactInspect() { console.log("inspectable"); }
 
   destroy() {
     if (this.sprite) {
@@ -202,7 +260,7 @@ class Area {
     areaName = "defaultName",
     background = "defaultBackground.png",
     objects = [],
-    spawnPoints = [new Phaser.Math.Vector2(0, 0)] //default spawn
+    spawnPoints = [new Phaser.Math.Vector2(0, 0)]
   ) {
     this.areaName = areaName;
     this.background = background;
@@ -213,83 +271,45 @@ class Area {
 
 class Player {
   constructor(inputGiven = null, mode = "default") {
-    this.inputGiven = inputGiven; //player, game, null
+    this.inputGiven = inputGiven;
     this.mode = mode;
   }
-
-  move() {
-    if (this.inputGiven) {
-      console.log("playerMovement active, move depending on mode");
-    }
-  }
-
-  switchMode() {
-    if (this.inputGiven) {
-      console.log("switchMode triggered, change spy/crouch/normal mode");
-    }
-  }
-
-  togglePlayer() {
-    if (this.inputGiven) {
-      console.log("togglePlayer triggered, switch to player input");
-    }
-  }
-
-  untogglePlayer() {
-    if (this.inputGiven) {
-      console.log("untogglePlayer triggered, switch to game/no input");
-    }
-  }
+  move() { if (this.inputGiven) console.log("playerMovement active"); }
+  switchMode() { if (this.inputGiven) console.log("switch mode"); }
+  togglePlayer() { if (this.inputGiven) console.log("toggle player input"); }
+  untogglePlayer() { if (this.inputGiven) console.log("untoggle player input"); }
 }
 
+// area info
 let areaInfo = {
   1: new Area(
     "area one",
     "https://images.pexels.com/photos/1590549/pexels-photo-1590549.jpeg?cs=srgb&dl=pexels-iriser-1590549.jpg&fm=jpg",
     [
-      new AreaObject(
-        "npc",
-        "npc1",
-        "assets/npc1.png",
-        new Phaser.Math.Vector2(200, 300)
-      ),
-      new AreaObject(
-        "item",
-        "chest",
-        "assets/chest.png",
-        new Phaser.Math.Vector2(500, 400)
-      )
+      new AreaObject("npc","npc1","assets/npc1.png",new Phaser.Math.Vector2(200,300)),
+      new AreaObject("item","chest","assets/chest.png",new Phaser.Math.Vector2(500,400))
     ],
-    [new Phaser.Math.Vector2(1000, 1000)]
+    [new Phaser.Math.Vector2(1000,1000)]
   ),
   2: new Area(
     "area two",
     "https://static.vecteezy.com/system/resources/previews/017/646/920/non_2x/flower-garden-bokeh-soft-light-abstract-background-eps-10-illustration-bokeh-particles-background-decoration-vector.jpg",
     [
-      new AreaObject(
-        "npc",
-        "npc2",
-        "assets/npc2.png",
-        new Phaser.Math.Vector2(250, 250)
-      )
+      new AreaObject("npc","npc2","assets/npc2.png",new Phaser.Math.Vector2(250,250))
     ],
-    [new Phaser.Math.Vector2(0, 500)]
+    [new Phaser.Math.Vector2(0,500)]
   ),
   3: new Area(
     "area three",
     "https://codetheweb.blog/assets/img/posts/css-advanced-background-images/cover.jpg",
     [
-      new AreaObject(
-        "item",
-        "potion",
-        "assets/potion.png",
-        new Phaser.Math.Vector2(400, 500)
-      )
+      new AreaObject("item","potion","assets/potion.png",new Phaser.Math.Vector2(400,500))
     ],
-    [new Phaser.Math.Vector2(200, 0)]
+    [new Phaser.Math.Vector2(200,0)]
   )
 };
 
+// config
 const config = {
   type: Phaser.AUTO,
   width: GAME_WIDTH,
@@ -300,3 +320,4 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
+
