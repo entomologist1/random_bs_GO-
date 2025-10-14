@@ -106,13 +106,13 @@ class mainScene extends Phaser.Scene {
     this.reloadNewArea(this.currentAreaIndex);
 
     //DEBUG: cycle areas  right arrow
-    this.input.keyboard.on("keydown-RIGHT", () => {
-      this.currentAreaIndex++;
-      if (this.currentAreaIndex > Object.keys(areaInfo).length) {
-        this.currentAreaIndex = 1;
-      }
-      this.reloadNewArea(this.currentAreaIndex);
-    });
+    addKeyInput(this, "RIGHT", () => {
+    this.currentAreaIndex++;
+    if (this.currentAreaIndex > Object.keys(areaInfo).length) {
+      this.currentAreaIndex = 1;
+    }
+    this.reloadNewArea(this.currentAreaIndex);
+  });
   }
 
   update() {
@@ -321,3 +321,40 @@ const config = {
 
 const game = new Phaser.Game(config);
 
+//helper functions for keybinding
+
+//save the keybinding
+let KEY_BINDINGS = {};
+function registerKey(scene, keyName) {
+  if (!KEY_BINDINGS[keyName]) {
+    KEY_BINDINGS[keyName] = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes[keyName]);
+  }
+  return KEY_BINDINGS[keyName];
+}
+
+
+//Callback for when key is pressed down
+function addKeyInput(scene, keyName, callback) {
+  registerKey(scene, keyName);
+  scene.input.keyboard.on(`keydown-${keyName}`, callback);
+}
+
+
+//Callback for when key is released
+function addKeyRelease(scene, keyName, callback) {
+  registerKey(scene, keyName);
+  scene.input.keyboard.on(`keyup-${keyName}`, callback);
+}
+
+
+//Returns whether key was held dowm
+function isKeyDown(scene, keyName) {
+  const key = registerKey(scene, keyName);
+  return key.isDown;
+}
+
+//Returns whether key was just released
+function isKeyUp(scene, keyName) {
+  const key = registerKey(scene, keyName);
+  return Phaser.Input.Keyboard.JustUp(key);
+}
