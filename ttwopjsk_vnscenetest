@@ -1,4 +1,4 @@
-//indiv testing for vnscene
+//OLD NO FLIP
 
 class MainScene extends Phaser.Scene {
   constructor() {
@@ -796,7 +796,6 @@ class VisualNovelScene extends Phaser.Scene {
 
       // Parse CSV
       const rawRows = await this.parseCSV(csvText);
-      console.log(rawRows)
 
       // Process and filter
       const processedData = this.processRows(rawRows);
@@ -851,8 +850,6 @@ class VisualNovelScene extends Phaser.Scene {
         y = 400;
       }
 
-      console.log(row.flip)
-      
       return {
         areaConvoID: row.areaConvoID,
         talkspriteID: row.talkspriteID,
@@ -863,8 +860,7 @@ class VisualNovelScene extends Phaser.Scene {
         y_position: y,
         quick_escape: row.quick_escape,
         quick_enter: row.quick_enter,
-        animation: row.animation,
-        flip: row.flip
+        animation: row.animation
       };
     });
   }
@@ -1009,12 +1005,6 @@ class VisualNovelScene extends Phaser.Scene {
             });
           }
         }
-      }
-      
-      if (current.flip != "TRUE") {
-        sprite.setFlipX(false);
-      } else {
-        sprite.setFlipX(true);
       }
 
       return sprite;
@@ -1335,7 +1325,7 @@ const config = {
 
 const game = new Phaser.Game(config);
 
-const areaConvoID = 1; 
+const areaConvoID = 2; // the ID you want to open immediately
 game.scene.start("VisualNovelScene", { areaConvoID });
 
  
