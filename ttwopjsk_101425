@@ -187,7 +187,7 @@ class MainScene extends Phaser.Scene {
     this.scene.launch("menuOverlay");
     this.scene.bringToTop("menuOverlay");
   }
- 
+
   //toggles world button transition btw world/worldmap
   toggleMode() {
     if (this.currentMode === "world") {
@@ -464,271 +464,7 @@ class WorldView {
     this.interactables.forEach((obj) => obj.destroy());
     this.interactables = [];
   }
-}
-
-class WorldMapView {
-  constructor(scene, lastLocationId) {
-    this.scene = scene;
-    const worldLocationData = {
-      1: { position: new Phaser.Math.Vector2(750, 625), maxSize: 150 },
-      2: { position: new Phaser.Math.Vector2(400, 175), maxSize: 150 },
-      3: { position: new Phaser.Math.Vector2(550, 375), maxSize: 150 },
-      4: { position: new Phaser.Math.Vector2(250, 370), maxSize: 100 },
-      5: { position: new Phaser.Math.Vector2(900, 375), maxSize: 100 }
-    };
-
-    // container for everything in the map
-    this.container = scene.add.container(0, 0);
-
-    // background map image
-    this.mapImage = scene.add.image(0, 0, "worldmapview-image").setOrigin(0);
-    this.mapWidth = 1329;
-    this.mapHeight = 766;
-    this.mapImage.setDisplaySize(this.mapWidth, this.mapHeight);
-    this.mapImage.setInteractive(); //background is interactive
-    this.container.add(this.mapImage);
-
-    // store buttons
-    this.buttons = [];
-
-    //world assignments
-    this.realworld = scene.add.container(0, 0); //buttons 1–5
-    this.fakeworld = scene.add.container(0, 0); //buttons 6–8
-    this.container.add(this.realworld);
-    scene.add.existing(this.fakeworld);
-
-    //location buttons positioning here
-    const keys = Object.keys(locationRegistry);
-
-    //sekai stuff
-    const phoneBg = this.scene.add.rectangle(
-      1000, // center X
-      175, // center Y
-      225, // width
-      375, // height
-      0xff0000,
-      0.2
-    );
-    phoneBg.setStrokeStyle(3, 0xff0000);
-
-    //container stuff for sekai
-    this.fakeworld = scene.add.container(phoneBg.x, phoneBg.y);
-    this.fakeworld.rotation = Phaser.Math.DegToRad(-5);
-    phoneBg.setPosition(0, 0);
-    this.fakeworld.add(phoneBg);
-
-    keys.forEach((key, index) => {
-      const locId = parseInt(key);
-
-      let x, y, maxSizeOption, textOption;
-
-      if (locId <= 5) {
-        // ✅ pull from worldLocationData
-        const location = worldLocationData[locId];
-        x = location.position.x;
-        y = location.position.y;
-        maxSizeOption = location.maxSize;
-        textOption = true;
-      } else {
-        // fake world layout
-        const localIndex = index - 5;
-        const cols = 1;
-        const spacingX = phoneBg.width / (cols + 1);
-        const spacingY = 86;
-
-        x = -phoneBg.width / 2 + spacingX * ((localIndex % cols) + 1);
-        y = -phoneBg.height / 2 + 64 + Math.floor(localIndex / cols) * spacingY;
-
-        maxSizeOption = 180;
-        textOption = false;
-      }
-
-      const button = new WorldMapView.LocationButton(
-        this.scene,
-        x,
-        y,
-        // still pass locationRegistry here if button needs metadata beyond position/maxSize
-        locationRegistry[locId],
-        () => this.onButtonClick(locId),
-        textOption,
-        maxSizeOption
-      );
-
-      this.buttons.push(button);
-
-      if (locId <= 5) {
-        this.realworld.add(button.container);
-      } else {
-        this.fakeworld.add(button.container);
-      }
-    });
-
-    //silly animation
-    this.scene.tweens.add({
-      targets: this.fakeworld, // the container holding rect + buttons
-      x: 900, // target X
-      y: 175, // target Y
-      rotation: Phaser.Math.DegToRad(-15), // rotate to 0 degrees
-      ease: "Power1", // easing function
-      duration: 200 // 1 second
-    });
-
-    //dragging
-    this.isDragging = false;
-    this.dragStartPoint = new Phaser.Math.Vector2();
-    this.containerStartPoint = new Phaser.Math.Vector2();
-    this.draggingThreshold = 5;
-    this.dragStarted = false;
-
-    this.mapImage.on("pointerdown", this.handlePointerDown, this);
-    scene.input.on("pointermove", this.handlePointerMove, this);
-    scene.input.on("pointerup", this.handlePointerUp, this);
-  }
-
-  onButtonClick(locationId) {
-    if (this.scene.isTransitioning) return;
-    if (this.scene.activeView !== this) return;
-
-    console.log(`Switching to location ${locationId}`);
-    this.scene.slideMapTransition(locationId);
-  }
-
-  handlePointerDown(pointer) {
-    this.isDragging = true;
-    this.dragStarted = false;
-    this.dragStartPoint.set(pointer.x, pointer.y);
-    this.containerStartPoint.set(this.container.x, this.container.y);
-  }
-
-  handlePointerMove(pointer) {
-    if (!this.isDragging) return;
-
-    const dx = pointer.x - this.dragStartPoint.x;
-    const dy = pointer.y - this.dragStartPoint.y;
-
-    if (
-      !this.dragStarted &&
-      (Math.abs(dx) > this.draggingThreshold ||
-        Math.abs(dy) > this.draggingThreshold)
-    ) {
-      this.dragStarted = true;
-    }
-
-    if (this.dragStarted) {
-      const newX = Phaser.Math.Clamp(
-        this.containerStartPoint.x + dx,
-        -(this.mapWidth - this.scene.scale.width),
-        0
-      );
-      const newY = Phaser.Math.Clamp(
-        this.containerStartPoint.y + dy,
-        -(this.mapHeight - this.scene.scale.height),
-        0
-      );
-
-      this.container.setPosition(newX, newY);
-    }
-  }
-
-  handlePointerUp() {
-    this.isDragging = false;
-    this.dragStarted = false;
-  }
-
-  update() {
-    // No updates yet
-  }
-
-  getLocationId() {
-    return 1; //placeholder
-  }
-
-  destroy() {
-    this.container.destroy();
-
-    this.mapImage.off("pointerdown", this.handlePointerDown, this);
-    this.scene.input.off("pointermove", this.handlePointerMove, this);
-    this.scene.input.off("pointerup", this.handlePointerUp, this);
-
-    this.buttons.forEach((btn) => btn.destroy());
-    this.buttons = [];
-  }
-}
-
-WorldMapView.LocationButton = class {
-  constructor(scene, x, y, location, onClick, textOption = true, maxSize = 64) {
-    this.scene = scene;
-
-    // group icon + label
-    this.container = scene.add.container(x, y);
-
-    // Icon
-    this.icon = scene.add.image(0, 0, location.iconKey).setOrigin(0.5);
-
-    // Scale icon proportionally to fit inside maxSize
-    const originalWidth = this.icon.width;
-    const originalHeight = this.icon.height;
-
-    if (originalWidth > 0 && originalHeight > 0) {
-      const scale = Math.min(maxSize / originalWidth, maxSize / originalHeight);
-      this.icon.setScale(scale);
-    }
-
-    // Text (or null if disabled)
-    this.text = null;
-    if (textOption === true) {
-      this.text = scene.add
-        .text(0, maxSize / 2 + 18, location.name, {
-          fontSize: "16px",
-          color: "#ffffff",
-          backgroundColor: "rgba(0,0,0,0.5)",
-          padding: { x: 4, y: 2 },
-          align: "center"
-        })
-        .setOrigin(0.5);
-    }
-
-    // Add to container
-    if (this.text) {
-      this.container.add([this.icon, this.text]);
-    } else {
-      this.container.add(this.icon);
-    }
-
-    // Auto-calc hit area from children bounds
-    const bounds = this.container.getBounds();
-    this.container.setSize(bounds.width, bounds.height);
-
-    // Make container interactive
-    this.container.setInteractive({ useHandCursor: true });
-    this.container.on("pointerdown", onClick);
-
-    //hover
-    this.container.on("pointerover", () => {
-      this.scene.tweens.add({
-        targets: this.container,
-        scaleX: 1.05,
-        scaleY: 1.05,
-        duration: 200,
-        ease: "Power1"
-      });
-    });
-
-    this.container.on("pointerout", () => {
-      this.scene.tweens.add({
-        targets: this.container,
-        scaleX: 1,
-        scaleY: 1,
-        duration: 200,
-        ease: "Power1"
-      });
-    });
-  }
-
-  destroy() {
-    this.container.destroy();
-  }
-};
+}  
 
 class locationDetails {
   constructor(
@@ -913,380 +649,6 @@ const locationRegistry = {
   )
 };
 
-class menuOverlay extends Phaser.Scene {
-  constructor() {
-    super({ key: "menuOverlay" });
-  }
-
-  preload() {
-    this.load.image(
-      "icon1",
-      "https://static.wikia.nocookie.net/id5/images/d/d8/EntomologistPersonality.png"
-    );
-    this.load.image(
-      "icon2",
-      "https://static.wikia.nocookie.net/id5/images/d/d8/EntomologistPersonality.png"
-    );
-    this.load.image(
-      "icon3",
-      "https://static.wikia.nocookie.net/id5/images/d/d8/EntomologistPersonality.png"
-    );
-  }
-
-  create() {
-    // Create container to hold all menu elements
-    this.menuContainer = this.add.container(0, 0);
-
-    const graphics = this.add.graphics();
-    graphics.fillStyle(0x3e9be8, 0.9);
-    graphics.fillRect(0, 0, 145, this.game.config.height);
-    graphics.fillStyle(0x3e9be8, 0.5);
-    graphics.fillRect(0, 0, 160, this.game.config.height);
-    this.menuContainer.add(graphics);
-
-    this.registry.set("menuButtonHover", false);
-
-    const iconYPositions = [85, 195, 305];
-    const iconKeys = ["icon1", "icon2", "icon3"];
-    iconKeys.forEach((key, index) => {
-      const icon = this.add
-        .image(75, iconYPositions[index], key)
-        .setInteractive({ useHandCursor: true })
-        .setScale(0.5);
-
-      icon.on("pointerover", () => {
-        this.registry.set("menuButtonHover", true);
-        this.tweens.add({
-          targets: icon,
-          scaleX: 0.55,
-          scaleY: 0.55,
-          duration: 200,
-          ease: "Power1"
-        });
-      });
-
-      icon.on("pointerout", () => {
-        this.registry.set("menuButtonHover", false);
-        this.tweens.add({
-          targets: icon,
-          scaleX: 0.5,
-          scaleY: 0.5,
-          duration: 200,
-          ease: "Power1"
-        });
-      });
-
-      icon.on("pointerdown", () => {
-        console.log(`${key} clicked`);
-      });
-
-      this.menuContainer.add(icon);
-    });
-
-    const bottomIcon = this.add
-      .image(125, this.game.config.height - 120, "icon1")
-      .setInteractive({ useHandCursor: true })
-      .setScale(1);
-
-    bottomIcon.on("pointerover", () => {
-      this.registry.set("menuButtonHover", true);
-      this.tweens.add({
-        targets: bottomIcon,
-        scaleX: 1.05,
-        scaleY: 1.05,
-        duration: 200,
-        ease: "Power1"
-      });
-    });
-
-    bottomIcon.on("pointerout", () => {
-      this.registry.set("menuButtonHover", false);
-      this.tweens.add({
-        targets: bottomIcon,
-        scaleX: 1,
-        scaleY: 1,
-        duration: 200,
-        ease: "Power1"
-      });
-    });
-
-    bottomIcon.on("pointerdown", () => {
-      const mainScene = this.scene.get("MainScene");
-      if (mainScene) mainScene.toggleMode();
-    });
-
-    this.menuContainer.add(bottomIcon);
-
-    this.scene.bringToTop();
-  }
-
-  //sliding transitions
-  slideOut() {
-    this.tweens.add({
-      targets: this.menuContainer,
-      x: -300,
-      duration: 400,
-      ease: "Power2"
-    });
-  }
-  slideIn() {
-    this.tweens.add({
-      targets: this.menuContainer,
-      x: 0,
-      duration: 400,
-      ease: "Power2"
-    });
-  }
-  resetPosition() {
-    if (this.menuContainer) {
-      this.menuContainer.x = 0;
-    }
-  }
-}
-
-const areaConvoSprite = {
-  //i think this is right bc i dont want to make 1000 copies of this for  every areaconvo. WOW this is messy as fck i dont even know what that is
-  1: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b1/Green_icon_-_Key.ZGH.png/640px-Green_icon_-_Key.ZGH.png"
-  },
-  2: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/Green_icon_-_Love.ZGH.png/640px-Green_icon_-_Love.ZGH.png"
-  },
-  3: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/b/ba/Green_icon_-_User.ZGH.png/640px-Green_icon_-_User.ZGH.png"
-  },
-  4: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Green_icon_-_Category.ZGH.png/640px-Green_icon_-_Category.ZGH.png"
-  },
-  5: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/Green_icon_-_Star.ZGH.png/640px-Green_icon_-_Star.ZGH.png"
-  },
-  6: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Green_icon_-_External.ZGH.png/640px-Green_icon_-_External.ZGH.png"
-  },
-  7: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Green_icon_-_Lock.ZGH.png/640px-Green_icon_-_Lock.ZGH.png"
-  },
-  8: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c6/Green_icon_-_Inbox.ZGH.png/640px-Green_icon_-_Inbox.ZGH.png"
-  },
-  9: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/Green_icon_-_Search.ZGH.png/640px-Green_icon_-_Search.ZGH.png"
-  },
-  10: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Green_icon_-_Tabs.ZGH.png/640px-Green_icon_-_Tabs.ZGH.png"
-  },
-  11: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/Green_icon_-_Categories.ZGH.png/640px-Green_icon_-_Categories.ZGH.png"
-  },
-  12: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d6/Green_icon_-_Fast.ZGH.png/640px-Green_icon_-_Fast.ZGH.png"
-  },
-  13: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/2/28/Green_icon_-_Home.ZGH.png/640px-Green_icon_-_Home.ZGH.png"
-  },
-  14: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/Green_icon_-_URL.ZGH.png/640px-Green_icon_-_URL.ZGH.png"
-  },
-  15: {
-    default:
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Green_icon_-_Flag.ZGH.png/640px-Green_icon_-_Flag.ZGH.png"
-  }
-};
-
-class areaConvoObject {
-  constructor(
-    scene,
-    position,
-    targetSceneKey = "VisualNovelScene",
-    sceneData = {}
-  ) {
-    this.scene = scene;
-    this.position = position.clone();
-    this.targetSceneKey = targetSceneKey;
-    this.sceneData = sceneData;
-
-    const key = "trigger-icon";
-
-    this.createSprite(key);
-    console.log(
-      "scenedata passed to areaConvoObject: " + this.sceneData.meta[1]
-    );
-  }
-
-  createSprite(defaultKey) {
-    const spriteIDs = this.sceneData.meta?.[1] || []; //check the list passed in
-    if (!Array.isArray(spriteIDs) || spriteIDs.length === 0) {
-      console.warn("smth fucked up with passing scenedata so :", defaultKey);
-      this.createDefaultSprite(defaultKey);
-      return;
-    }
-
-    this.sprites = [];
-    const loadQueue = [];
-
-    spriteIDs.forEach((id) => {
-      const spriteInfo = areaConvoSprite[id];
-      const imageUrl = spriteInfo?.default;
-      if (!imageUrl) {
-        console.warn("areaConvoSprite doesnt have the image....???");
-        return;
-      }
-
-      const dynamicKey = `sprite-${id}`;
-      if (!this.scene.textures.exists(dynamicKey)) {
-        this.scene.load.image(dynamicKey, imageUrl);
-        loadQueue.push(dynamicKey);
-      }
-    });
-
-    if (loadQueue.length > 0) {
-      this.scene.load.once("complete", () => {
-        this.addMultipleSprites(spriteIDs);
-      });
-      this.scene.load.start();
-    } else {
-      this.addMultipleSprites(spriteIDs);
-    }
-  }
-
-  addMultipleSprites(spriteIDs) {
-    const spacing = 125;
-    const startX = this.position.x - ((spriteIDs.length - 1) * spacing) / 2; //@_@
-
-    spriteIDs.forEach((id, index) => {
-      const dynamicKey = `sprite-${id}`;
-      if (!this.scene.textures.exists(dynamicKey)) return;
-
-      const x = startX + index * spacing;
-      const sprite = this.scene.add
-        .sprite(x, this.position.y, dynamicKey)
-        .setInteractive()
-        .setScrollFactor(1)
-        .setScale(0.3);
-
-      //flipping
-      if ((spriteIDs.length === 3 || spriteIDs.length === 4) && index < 2) {
-        sprite.setFlipX(true); // first two flipped
-      } else if (spriteIDs.length === 2 && index === 0) {
-        sprite.setFlipX(true); // only first one flipped
-      }
-      //depth
-      if (index === 0) {
-        sprite.setDepth(20); // top layer
-      } else {
-        sprite.setDepth(10); // below the first
-      }
-
-      sprite.on("pointerdown", () => {
-        this.triggerOverlayScene();
-      });
-
-      sprite.on("pointerover", () => {
-        this.sprites.forEach((s) => {
-          this.scene.tweens.killTweensOf(s);
-          this.scene.tweens.add({
-            targets: s,
-            scaleX: 0.35,
-            scaleY: 0.35,
-            duration: 150,
-            ease: "Power2"
-          });
-        });
-      });
-
-      sprite.on("pointerout", () => {
-        this.sprites.forEach((s) => {
-          this.scene.tweens.killTweensOf(s);
-          this.scene.tweens.add({
-            targets: s,
-            scaleX: 0.3,
-            scaleY: 0.3,
-            duration: 150,
-            ease: "Power2"
-          });
-        });
-      });
-
-      this.sprites.push(sprite);
-    });
-  }
-
-  createDefaultSprite(key) {
-    const sprite = this.scene.add
-      .sprite(this.position.x, this.position.y, key)
-      .setInteractive()
-      .setDepth(10)
-      .setScrollFactor(1)
-      .setScale(0.5);
-
-    sprite.on("pointerdown", () => {
-      this.triggerOverlayScene();
-    });
-
-    sprite.on("pointerover", () => {
-      this.scene.tweens.killTweensOf(sprite);
-      this.scene.tweens.add({
-        targets: sprite,
-        scaleX: 0.55,
-        scaleY: 0.55,
-        duration: 150,
-        ease: "Power2"
-      });
-    });
-
-    sprite.on("pointerout", () => {
-      this.scene.tweens.killTweensOf(sprite);
-      this.scene.tweens.add({
-        targets: sprite,
-        scaleX: 0.5,
-        scaleY: 0.5,
-        duration: 150,
-        ease: "Power2"
-      });
-    });
-
-    this.sprites = [sprite];
-  }
-
-  triggerOverlayScene() {
-    if (!this.scene.scene.isActive(this.targetSceneKey)) {
-      console.log(`launching: ${this.targetSceneKey}`);
-      console.log(`with: ${this.sceneData.convoId}`);
-
-      this.scene.scene.pause("WorldView");
-      this.scene.scene.launch(this.targetSceneKey, {
-        areaConvoID: this.sceneData.convoId
-      });
-      this.scene.scene.bringToTop(this.targetSceneKey);
-    } else {
-      console.log(`visualnovelscene already active`);
-    }
-  }
-
-  destroy() {
-    if (this.sprites) {
-      this.sprites.forEach((sprite) => sprite.destroy());
-    } else {
-      this.sprite?.destroy();
-    }
-  }
-}
-
 class VisualNovelScene extends Phaser.Scene {
   constructor() {
     super({ key: "VisualNovelScene" });
@@ -1325,7 +687,7 @@ class VisualNovelScene extends Phaser.Scene {
     this.characterSprites = {};
 
     const mainScene = this.scene.get("MainScene");
-    this.scene.get("menuOverlay").slideOut();
+    this.scene.get("menuOverlay")?.slideOut();
 
     if (!mainScene || mainScene.currentMode !== "world") {
       console.error("only open when currentMode is 'world'.");
@@ -1432,6 +794,7 @@ class VisualNovelScene extends Phaser.Scene {
 
       // Parse CSV
       const rawRows = await this.parseCSV(csvText);
+      console.log(rawRows)
 
       // Process and filter
       const processedData = this.processRows(rawRows);
@@ -1485,7 +848,7 @@ class VisualNovelScene extends Phaser.Scene {
       if (isNaN(y)) {
         y = 400;
       }
-
+      
       return {
         areaConvoID: row.areaConvoID,
         talkspriteID: row.talkspriteID,
@@ -1496,7 +859,8 @@ class VisualNovelScene extends Phaser.Scene {
         y_position: y,
         quick_escape: row.quick_escape,
         quick_enter: row.quick_enter,
-        animation: row.animation
+        animation: row.animation,
+        flip: row.flip
       };
     });
   }
@@ -1532,7 +896,7 @@ class VisualNovelScene extends Phaser.Scene {
       onComplete: () => {
         //cleanup lol
         this.scene.resume("MainScene"); //idk why its being difficult but whtaever
-        this.scene.get("menuOverlay").slideIn();
+        this.scene.get("menuOverlay")?.slideIn();
         this.scene.stop();
       }
     });
@@ -1641,6 +1005,12 @@ class VisualNovelScene extends Phaser.Scene {
             });
           }
         }
+      }
+      
+      if (current.flip.toUpperCase() != "TRUE") {
+        sprite.setFlipX(false);
+      } else {
+        sprite.setFlipX(true);
       }
 
       return sprite;
@@ -1808,7 +1178,6 @@ class VisualNovelScene extends Phaser.Scene {
 
       this.textbox = this.scene.add.graphics();
 
-      //fill
       this.textbox.fillStyle(0xd9fbfc, 0.9);
       this.textbox.fillRoundedRect(
         boxX,
@@ -1957,61 +1326,12 @@ const config = {
     width: 1000,
     height: 600
   },
-  scene: [MainScene, menuOverlay, VisualNovelScene]
+  scene: [MainScene, VisualNovelScene]
 };
 
 const game = new Phaser.Game(config);
 
-class ErrorScene extends Phaser.Scene {
-  constructor() {
-    super({ key: "ErrorScene" });
-  }
+const areaConvoID = 1; 
+game.scene.start("VisualNovelScene", { areaConvoID });
 
-  init(data) {
-    this.errorMessage = data.message || "Unknown error occurred.";
-  }
-
-  create() {
-    const { width, height } = this.scale;
-
-    const allScenes = this.scene.manager.getScenes(true); // currently running scenes
-    allScenes.forEach((scene) => {
-      if (scene.scene.key !== this.scene.key) {
-        this.scene.pause(scene.scene.key);
-        this.scene.setVisible(false, scene.scene.key);
-      }
-    });
-
-    this.add.rectangle(0, 0, width, height, 0x000000, 0.7).setOrigin(0);
-    this.add
-      .text(width / 2, height / 2 - 20, "oh no", {
-        font: "32px Arial",
-        fill: "#ff4444"
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(width / 2, height / 2 + 20, this.errorMessage, {
-        font: "20px Arial",
-        fill: "#ffffff",
-        wordWrap: { width: width - 100 }
-      })
-      .setOrigin(0.5);
-
-    const restartText = this.add
-      .text(width / 2, height / 2 + 80, "try again?", {
-        font: "22px Arial",
-        fill: "#00ff00",
-        backgroundColor: "#222",
-        padding: { left: 10, right: 10, top: 5, bottom: 5 }
-      })
-      .setOrigin(0.5)
-      .setInteractive();
-
-    restartText.on("pointerdown", () => {
-      this.scene.start("MainScene"); // restart attempt
-    });
-  }
-}
-
-
+ 
