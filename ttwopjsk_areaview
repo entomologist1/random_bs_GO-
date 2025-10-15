@@ -1,0 +1,1149 @@
+class MainScene extends Phaser.Scene {
+  constructor() {
+    //
+    super({ key: "MainScene" });
+    this.filteredData = [];
+  }
+
+  init() {
+    this.activeView = null;
+    this.currentMode = "world";
+
+    this.lastLocationId = 1;
+    this.isTransitioning = false;
+  }
+
+  preload() {
+    this.load.image(
+      "player",
+      "https://ps.w.org/instant-images/assets/icon-256x256.png"
+    );
+    this.load.image(
+      "trigger-icon",
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/Green_icon_-_Star.ZGH.png/640px-Green_icon_-_Star.ZGH.png"
+    );
+    this.load.image(
+      "worldmapview-image",
+      "https://static.wikia.nocookie.net/projectsekai/images/b/ba/Worldmap.png"
+    );
+    for (const id in locationRegistry) {
+      locationRegistry[id].preload(this);
+    }
+  }
+
+  //on creation:
+  async create() {
+    const success = await this.loadAndFilterConvo();
+    if (!success) return;
+
+    this.createOverlay();
+    this.switchView("world", this.lastLocationId, this.filteredData);
+  }
+
+  //animations
+  update(time, delta) {
+    if (this.activeView && this.activeView.update) {
+      this.activeView.update(time, delta);
+    }
+  }
+
+  //gets convo data
+  async loadAndFilterConvo() {
+    const csvUrl =
+      "https://raw.githubusercontent.com/entomologist1/ttwopjsk/refs/heads/main/test_convolist.csv";
+    const target = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+    try {
+      const rawData = await this.loadCSV(csvUrl);
+      const arrayForSorting = this.preprocessData(rawData);
+      const result = this.pickRandomValidCombination(
+        arrayForSorting,
+        target,
+        2
+      );
+      this.filteredData = this.filterRawDataByIDs(arrayForSorting, result);
+      console.log("chosen:", this.filteredData);
+      return true;
+    } catch (err) {
+      console.error("CSV load failed:", err);
+
+      if (!this.scene.get("ErrorScene")) {
+        this.scene.add("ErrorScene", ErrorScene, true, {
+          message: "couldnt load scene data!!! x("
+        });
+      } else {
+        this.scene.start("ErrorScene", {
+          message: "couldnt load scene data!!! x("
+        });
+      }
+
+      return false;
+    }
+  }
+
+  //loading csv functions
+  async loadCSV(url) {
+    return new Promise((resolve, reject) => {
+      Papa.parse(url, {
+        download: true,
+        header: false,
+        skipEmptyLines: true,
+        dynamicTyping: true,
+        quoteChar: '"',
+        complete: (results) => resolve(results.data),
+        error: (err) => reject(err)
+      });
+    });
+  }
+  preprocessData(rawData) {
+    return rawData
+      .slice(1) //skip header
+      .filter((row) => row.length >= 3)
+      .map((row) => {
+        const id = row[0];
+        let numberList;
+
+        if (typeof row[1] === "string") {
+          numberList = row[1].split(",").map(Number);
+        } else if (Array.isArray(row[1])) {
+          numberList = row[1];
+        } else if (typeof row[1] === "number") {
+          numberList = [row[1]];
+        } else {
+          numberList = [];
+        }
+
+        const location = row[2];
+        return [id, numberList, location];
+      });
+  }
+  pickRandomValidCombination(data, targetArray, maxPerLocation = 2) {
+    console.log("randomizing...");
+
+    const targetSet = new Set(targetArray);
+    const targetSize = targetSet.size;
+
+    // Shuffle once at the start
+    const shuffled = [...data];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    function helper(index, usedNums, selectedIDs, locCounts) {
+      if (
+        usedNums.size === targetSize &&
+        [...usedNums].every((n) => targetSet.has(n))
+      ) {
+        return [...selectedIDs];
+      }
+
+      for (let i = index; i < shuffled.length; i++) {
+        const [id, numbers, location] = shuffled[i];
+
+        // Skip if any number is already used
+        let hasConflict = false;
+        for (const n of numbers) {
+          if (usedNums.has(n)) {
+            hasConflict = true;
+            break;
+          }
+        }
+        if (hasConflict) continue;
+
+        // Skip if location maxed out
+        if ((locCounts[location] || 0) >= maxPerLocation) continue;
+
+        // Try next
+        const newUsed = new Set(usedNums);
+        for (const n of numbers) newUsed.add(n);
+
+        const newLocCounts = {
+          ...locCounts,
+          [location]: (locCounts[location] || 0) + 1
+        };
+
+        const result = helper(
+          i + 1,
+          newUsed,
+          [...selectedIDs, id],
+          newLocCounts
+        );
+        if (result) return result;
+      }
+
+      return null;
+    } //yay forloop
+
+    return helper(0, new Set(), [], {});
+  }
+  filterRawDataByIDs(rawData, idList) {
+    const idSet = new Set(idList);
+    return rawData.filter((row) => idSet.has(row[0]));
+  }
+
+  //menu overlay
+  createOverlay() {
+    this.scene.launch("menuOverlay");
+    this.scene.bringToTop("menuOverlay");
+  }
+
+  //toggles world button transition btw world/worldmap
+  toggleMode() {
+    if (this.currentMode === "world") {
+      this.lastLocationId = this.activeView.getLocationId();
+      this.fadeTransition(this.lastLocationId);
+    } else if (this.currentMode === "worldMap") {
+      this.fadeMapTransition(this.lastLocationId);
+    }
+    //add more if needed
+  }
+
+  //actually handles creating/destroying the views
+  switchView(mode, locationId, convoData = []) {
+    if (this.activeView && this.activeView.destroy) {
+      this.activeView.destroy();
+    }
+    this.cameras.main.setScroll(0, 0);
+
+    if (mode === "world") {
+      this.activeView = new WorldView(this, locationId, convoData);
+    } else if (mode === "worldMap") {
+      //we are at worldmap
+      this.activeView = new WorldMapView(this, locationId);
+    }
+    //add more if needed
+    this.currentMode = mode;
+  }
+
+  //transition to worldmap
+  fadeTransition(locationId) {
+    if (this.isTransitioning) return; // 🚫 block re-entry
+    this.isTransitioning = true;
+
+    this.cameras.main.fadeOut(200, 0, 0, 0);
+    this.cameras.main.once("camerafadeoutcomplete", () => {
+      this.switchView("worldMap", locationId, this.filteredData);
+      this.cameras.main.fadeIn(200, 0, 0, 0);
+
+      this.cameras.main.once("camerafadeincomplete", () => {
+        this.isTransitioning = false;
+      });
+    });
+  }
+
+  //transition to world
+  fadeMapTransition(locationId) {
+    if (this.isTransitioning) return;
+    this.isTransitioning = true;
+
+    this.cameras.main.fadeOut(200, 0, 0, 0);
+    this.cameras.main.once("camerafadeoutcomplete", () => {
+      this.switchView("world", locationId, this.filteredData);
+      this.cameras.main.fadeIn(200, 0, 0, 0);
+
+      this.cameras.main.once("camerafadeincomplete", () => {
+        this.isTransitioning = false;
+      });
+    });
+  }
+  slideMapTransition(locationId) {
+    if (this.isTransitioning) return;
+    this.isTransitioning = true;
+
+    const oldView = this.activeView;
+    const cover = this.add
+      .rectangle(0, 0, this.scale.width, this.scale.height, 0xff0000)
+      .setOrigin(0, 0)
+      .setDepth(103939)
+      .setScrollFactor(0);
+    cover.x = -this.scale.width;
+
+    this.tweens.add({
+      targets: cover,
+      x: 0,
+      duration: 300,
+      ease: "Cubic.easeInOut",
+      onComplete: () => {
+        const newWorld = new WorldView(this, locationId, this.filteredData);
+        newWorld.container.x = 0;
+
+        this.time.delayedCall(100, () => {
+          oldView.destroy();
+          this.activeView = newWorld;
+          this.currentMode = "world";
+
+          this.tweens.add({
+            targets: cover,
+            x: this.scale.width,
+            duration: 300,
+            ease: "Cubic.easeInOut",
+            onComplete: () => {
+              cover.destroy();
+              this.isTransitioning = false;
+            }
+          });
+        });
+      }
+    });
+  }
+}
+
+class WorldView {
+  constructor(scene, locationId, convoData = []) {
+    this.scene = scene;
+    this.location = locationRegistry[locationId];
+    this.locationId = locationId;
+    this.convoData = convoData.filter((row) => {
+      //only convodata for current scene
+      const locationCol = row[2]; // third column is locationID
+      if (Array.isArray(locationCol)) {
+        return locationCol.includes(locationId);
+      }
+      return locationCol === locationId;
+    });
+
+    console.log(this.convoData);
+
+    this.container = scene.add.container(0, 0);
+
+    //why do i even have a player. Whatever. Get contained idiot
+    const spawn = this.location.getSpawnCoordinates();
+    this.player = scene.physics.add.sprite(spawn.x, spawn.y, "player");
+    this.player.setCollideWorldBounds(true);
+    this.container.add(this.player);
+
+    scene.cameras.main.startFollow(this.player, true, 0.15, 0.15);
+    scene.cameras.main.setBounds(0, 0, 2700, 2000);
+    scene.physics.world.setBounds(0, 0, 2700, 2000);
+
+    this.locationBackground = scene.add
+      .image(0, 0, this.location.backgroundKey)
+      .setOrigin(0);
+    this.container.addAt(this.locationBackground, 0);
+
+    if (this.location.foregroundKey) {
+      this.locationForeground = scene.add
+        .image(0, 0, this.location.foregroundKey)
+        .setOrigin(0);
+      this.container.add(this.locationForeground);
+    }
+
+    const collisionKey = this.location.collisionKey;
+    const texture = scene.textures.get(collisionKey)?.getSourceImage();
+
+    if (!texture) {
+      console.log(`Missing collision texture: ${collisionKey}`);
+    } else {
+      if (scene.textures.exists("collisionData")) {
+        scene.textures.remove("collisionData");
+      }
+      this.collisionCanvas = scene.textures.createCanvas(
+        "collisionData",
+        texture.width,
+        texture.height
+      );
+      this.collisionCanvas.draw(0, 0, texture);
+    }
+
+    //bullsjhit
+    this.player.setDepth(5);
+
+    this.collisionOverlay = scene.add
+      .image(0, 0, collisionKey)
+      .setOrigin(0)
+      .setAlpha(0.3);
+    this.container.add(this.collisionOverlay);
+
+    this.cursors = scene.input.keyboard.createCursorKeys();
+    this.lastValidPosition = new Phaser.Math.Vector2(
+      this.player.x,
+      this.player.y
+    );
+
+    //if convodata contains convos with current locationID, load here
+
+    this.interactables = [];
+    const spawnPoints = this.location.getAreaConvoSpawn(); // returns array of Phaser.Math.Vector2
+    let spawnIndex = 0;
+    this.convoData.forEach((row) => {
+      const convoId = row[0];
+      console.log("convoId is: ", convoId);
+
+      //cycle through spawn points
+      const pos = spawnPoints[spawnIndex % spawnPoints.length];
+      spawnIndex++;
+
+      const obj = new areaConvoObject(this.scene, pos, "VisualNovelScene", {
+        convoId: convoId,
+        meta: row
+      });
+      this.interactables.push(obj);
+    });
+
+    //MORE FUNCTIONS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! :D
+  }
+
+  update() {
+    //more player bullshit. surely it would have been easier to just have the background move around by itself. whatever
+    const speed = 350;
+    const margin = 150;
+    const pointer = this.scene.input.activePointer;
+    let moveX = 0,
+      moveY = 0;
+
+    if (this.cursors.left.isDown) moveX = -1;
+    else if (this.cursors.right.isDown) moveX = 1;
+    if (this.cursors.up.isDown) moveY = -1;
+    else if (this.cursors.down.isDown) moveY = 1;
+
+    //this is menuOverlay stuff
+    const hoveringMenu = this.scene.registry.get("menuButtonHover");
+
+    if (!hoveringMenu && moveX === 0 && moveY === 0 && pointer.manager.isOver) {
+      const w = this.scene.game.config.width,
+        h = this.scene.game.config.height;
+      if (pointer.x < margin) moveX = -1;
+      else if (pointer.x > w - margin) moveX = 1;
+      if (pointer.y < margin) moveY = -1;
+      else if (pointer.y > h - margin) moveY = 1;
+    }
+
+    const newX = this.player.x + moveX * 5;
+    const newY = this.player.y + moveY * 5;
+
+    if (this.isWalkable(newX, newY)) {
+      this.player.setVelocity(moveX * speed, moveY * speed);
+      this.lastValidPosition.set(this.player.x, this.player.y);
+    } else {
+      this.player.setVelocity(0);
+      this.player.setPosition(
+        this.lastValidPosition.x,
+        this.lastValidPosition.y
+      );
+    }
+  }
+
+  isWalkable(x, y) {
+    if (!this.collisionCanvas) return true;
+
+    const halfW = this.player.width / 2,
+      halfH = this.player.height / 2;
+    const points = [
+      { x: x - halfW, y: y - halfH },
+      { x: x + halfW, y: y - halfH },
+      { x: x - halfW, y: y + halfH },
+      { x: x + halfW, y: y + halfH }
+    ];
+    return points.every((point) => {
+      const pixel = this.collisionCanvas.getPixel(
+        Math.floor(point.x),
+        Math.floor(point.y)
+      );
+      return pixel && pixel.r > 128 && pixel.g > 128 && pixel.b > 128;
+    });
+  }
+
+  getLocationId() {
+    return this.location.id;
+  }
+
+  destroy() {
+    this.container.destroy();
+    this.scene.cameras.main.stopFollow();
+    this.scene.physics.world.setBounds(
+      0,
+      0,
+      this.scene.scale.width,
+      this.scene.scale.height
+    );
+    if (this.scene.textures.exists("collisionData")) {
+      this.scene.textures.remove("collisionData");
+    }
+    this.collisionCanvas = null;
+    this.interactables.forEach((obj) => obj.destroy());
+    this.interactables = [];
+  }
+}
+
+class WorldMapView {
+  constructor(scene, lastLocationId) {
+    this.scene = scene;
+    const worldLocationData = {
+      1: { position: new Phaser.Math.Vector2(750, 625), maxSize: 150 },
+      2: { position: new Phaser.Math.Vector2(400, 175), maxSize: 150 },
+      3: { position: new Phaser.Math.Vector2(550, 375), maxSize: 150 },
+      4: { position: new Phaser.Math.Vector2(250, 370), maxSize: 100 },
+      5: { position: new Phaser.Math.Vector2(900, 375), maxSize: 100 }
+    };
+
+    // container for everything in the map
+    this.container = scene.add.container(0, 0);
+
+    // background map image
+    this.mapImage = scene.add.image(0, 0, "worldmapview-image").setOrigin(0);
+    this.mapWidth = 1329;
+    this.mapHeight = 766;
+    this.mapImage.setDisplaySize(this.mapWidth, this.mapHeight);
+    this.mapImage.setInteractive(); //background is interactive
+    this.container.add(this.mapImage);
+
+    // store buttons
+    this.buttons = [];
+
+    //world assignments
+    this.realworld = scene.add.container(0, 0); //buttons 1–5
+    this.fakeworld = scene.add.container(0, 0); //buttons 6–8
+    this.container.add(this.realworld);
+    scene.add.existing(this.fakeworld);
+
+    //location buttons positioning here
+    const keys = Object.keys(locationRegistry);
+
+    //sekai stuff
+    const phoneBg = this.scene.add.rectangle(
+      1000, // center X
+      175, // center Y
+      225, // width
+      375, // height
+      0xff0000,
+      0.2
+    );
+    phoneBg.setStrokeStyle(3, 0xff0000);
+
+    //container stuff for sekai
+    this.fakeworld = scene.add.container(phoneBg.x, phoneBg.y);
+    this.fakeworld.rotation = Phaser.Math.DegToRad(-5);
+    phoneBg.setPosition(0, 0);
+    this.fakeworld.add(phoneBg);
+
+    keys.forEach((key, index) => {
+      const locId = parseInt(key);
+
+      let x, y, maxSizeOption, textOption;
+
+      if (locId <= 5) {
+        // ✅ pull from worldLocationData
+        const location = worldLocationData[locId];
+        x = location.position.x;
+        y = location.position.y;
+        maxSizeOption = location.maxSize;
+        textOption = true;
+      } else {
+        // fake world layout
+        const localIndex = index - 5;
+        const cols = 1;
+        const spacingX = phoneBg.width / (cols + 1);
+        const spacingY = 86;
+
+        x = -phoneBg.width / 2 + spacingX * ((localIndex % cols) + 1);
+        y = -phoneBg.height / 2 + 64 + Math.floor(localIndex / cols) * spacingY;
+
+        maxSizeOption = 180;
+        textOption = false;
+      }
+
+      const button = new WorldMapView.LocationButton(
+        this.scene,
+        x,
+        y,
+        // still pass locationRegistry here if button needs metadata beyond position/maxSize
+        locationRegistry[locId],
+        () => this.onButtonClick(locId),
+        textOption,
+        maxSizeOption
+      );
+
+      this.buttons.push(button);
+
+      if (locId <= 5) {
+        this.realworld.add(button.container);
+      } else {
+        this.fakeworld.add(button.container);
+      }
+    });
+
+    //silly animation
+    this.scene.tweens.add({
+      targets: this.fakeworld, // the container holding rect + buttons
+      x: 900, // target X
+      y: 175, // target Y
+      rotation: Phaser.Math.DegToRad(-15), // rotate to 0 degrees
+      ease: "Power1", // easing function
+      duration: 200 // 1 second
+    });
+
+    //dragging
+    this.isDragging = false;
+    this.dragStartPoint = new Phaser.Math.Vector2();
+    this.containerStartPoint = new Phaser.Math.Vector2();
+    this.draggingThreshold = 5;
+    this.dragStarted = false;
+
+    this.mapImage.on("pointerdown", this.handlePointerDown, this);
+    scene.input.on("pointermove", this.handlePointerMove, this);
+    scene.input.on("pointerup", this.handlePointerUp, this);
+  }
+
+  onButtonClick(locationId) {
+    if (this.scene.isTransitioning) return;
+    if (this.scene.activeView !== this) return;
+
+    console.log(`Switching to location ${locationId}`);
+    this.scene.slideMapTransition(locationId);
+  }
+
+  handlePointerDown(pointer) {
+    this.isDragging = true;
+    this.dragStarted = false;
+    this.dragStartPoint.set(pointer.x, pointer.y);
+    this.containerStartPoint.set(this.container.x, this.container.y);
+  }
+
+  handlePointerMove(pointer) {
+    if (!this.isDragging) return;
+
+    const dx = pointer.x - this.dragStartPoint.x;
+    const dy = pointer.y - this.dragStartPoint.y;
+
+    if (
+      !this.dragStarted &&
+      (Math.abs(dx) > this.draggingThreshold ||
+        Math.abs(dy) > this.draggingThreshold)
+    ) {
+      this.dragStarted = true;
+    }
+
+    if (this.dragStarted) {
+      const newX = Phaser.Math.Clamp(
+        this.containerStartPoint.x + dx,
+        -(this.mapWidth - this.scene.scale.width),
+        0
+      );
+      const newY = Phaser.Math.Clamp(
+        this.containerStartPoint.y + dy,
+        -(this.mapHeight - this.scene.scale.height),
+        0
+      );
+
+      this.container.setPosition(newX, newY);
+    }
+  }
+
+  handlePointerUp() {
+    this.isDragging = false;
+    this.dragStarted = false;
+  }
+
+  update() {
+    // No updates yet
+  }
+
+  getLocationId() {
+    return 1; //placeholder
+  }
+
+  destroy() {
+    this.container.destroy();
+
+    this.mapImage.off("pointerdown", this.handlePointerDown, this);
+    this.scene.input.off("pointermove", this.handlePointerMove, this);
+    this.scene.input.off("pointerup", this.handlePointerUp, this);
+
+    this.buttons.forEach((btn) => btn.destroy());
+    this.buttons = [];
+  }
+}
+
+WorldMapView.LocationButton = class {
+  constructor(scene, x, y, location, onClick, textOption = true, maxSize = 64) {
+    this.scene = scene;
+
+    // group icon + label
+    this.container = scene.add.container(x, y);
+
+    // Icon
+    this.icon = scene.add.image(0, 0, location.iconKey).setOrigin(0.5);
+
+    // Scale icon proportionally to fit inside maxSize
+    const originalWidth = this.icon.width;
+    const originalHeight = this.icon.height;
+
+    if (originalWidth > 0 && originalHeight > 0) {
+      const scale = Math.min(maxSize / originalWidth, maxSize / originalHeight);
+      this.icon.setScale(scale);
+    }
+
+    // Text (or null if disabled)
+    this.text = null;
+    if (textOption === true) {
+      this.text = scene.add
+        .text(0, maxSize / 2 + 18, location.name, {
+          fontSize: "16px",
+          color: "#ffffff",
+          backgroundColor: "rgba(0,0,0,0.5)",
+          padding: { x: 4, y: 2 },
+          align: "center"
+        })
+        .setOrigin(0.5);
+    }
+
+    // Add to container
+    if (this.text) {
+      this.container.add([this.icon, this.text]);
+    } else {
+      this.container.add(this.icon);
+    }
+
+    // Auto-calc hit area from children bounds
+    const bounds = this.container.getBounds();
+    this.container.setSize(bounds.width, bounds.height);
+
+    // Make container interactive
+    this.container.setInteractive({ useHandCursor: true });
+    this.container.on("pointerdown", onClick);
+
+    //hover
+    this.container.on("pointerover", () => {
+      this.scene.tweens.add({
+        targets: this.container,
+        scaleX: 1.05,
+        scaleY: 1.05,
+        duration: 200,
+        ease: "Power1"
+      });
+    });
+
+    this.container.on("pointerout", () => {
+      this.scene.tweens.add({
+        targets: this.container,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 200,
+        ease: "Power1"
+      });
+    });
+  }
+
+  destroy() {
+    this.container.destroy();
+  }
+};
+
+class locationDetails {
+  constructor(
+    name = null,
+    id = null,
+    backgroundKey = null,
+    backgroundFile = null,
+    collisionKey = null,
+    collisionFile = null,
+    foregroundKey = null,
+    foregroundFile = null,
+    spawnPoint = null,
+    iconKey = null,
+    iconFile = null,
+    areaConvoSpawn = [
+      new Phaser.Math.Vector2(500, 600),
+      new Phaser.Math.Vector2(500, 750),
+      new Phaser.Math.Vector2(500, 750),
+      new Phaser.Math.Vector2(500, 800)
+    ]
+  ) {
+    this.name = name;
+    this.id = id;
+
+    this.backgroundKey = backgroundKey;
+    this.backgroundFile = backgroundFile;
+
+    this.collisionKey = collisionKey;
+    this.collisionFile = collisionFile;
+
+    this.foregroundKey = foregroundKey;
+    this.foregroundFile = foregroundFile;
+
+    this.spawnPoint = spawnPoint;
+    this.areaConvoSpawn = areaConvoSpawn;
+
+    this.iconKey = iconKey;
+    this.iconFile = iconFile;
+  }
+
+  preload(scene) {
+    scene.load.image(this.backgroundKey, this.backgroundFile);
+    scene.load.image(this.collisionKey, this.collisionFile);
+
+    if (this.foregroundKey && this.foregroundFile) {
+      scene.load.image(this.foregroundKey, this.foregroundFile);
+    }
+
+    if (this.iconKey && this.iconFile) {
+      scene.load.image(this.iconKey, this.iconFile);
+    }
+  }
+
+  render(scene) {
+    scene.add.image(0, 0, this.backgroundKey).setOrigin(0).setScrollFactor(1);
+    if (this.foregroundKey) {
+      scene.add.image(0, 0, this.foregroundKey).setOrigin(0).setScrollFactor(1);
+    }
+  }
+
+  getSpawnCoordinates() {
+    return { x: this.spawnPoint.x, y: this.spawnPoint.y };
+  }
+
+  getAreaConvoSpawn() {
+    return this.areaConvoSpawn;
+  }
+}
+
+const locationRegistry = {
+  1: new locationDetails(
+    "Test Location", //name
+    1, //id
+    "face", //backgroundkey
+    "https://i.ibb.co/zhFCWbqD/Untitled5657-0000-01-23-20250721214420.png", //backgroundfile
+    "collision", //collisionkey
+    "https://i.imgur.com/8qx7IAi.png", //collisionfile
+    null, //foregroundkey
+    null, //foregroundfile
+    new Phaser.Math.Vector2(500, 500), //spawnpoint
+    "mapbutton1", //mapbuttonkey
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Green_icon_-_Help.ZGH.png/640px-Green_icon_-_Help.ZGH.png" //mapbuttonfile
+    //areaconvospawns will be later when im not lazy
+  ),
+
+  2: new locationDetails(
+    "Desert",
+    2,
+    "bg_desert",
+    "https://i.ibb.co/zhFCWbqD/Untitled5657-0000-01-23-20250721214420.png",
+    "col_desert",
+    "https://files.catbox.moe/bcc6ju.png",
+    null,
+    null,
+    new Phaser.Math.Vector2(500, 200),
+    "mapbutton2",
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Green_icon_-_Help.ZGH.png/640px-Green_icon_-_Help.ZGH.png"
+  ),
+
+  3: new locationDetails(
+    "This is three",
+    3,
+    "background3",
+    "https://i.ibb.co/zhFCWbqD/Untitled5657-0000-01-23-20250721214420.png",
+    "collision3",
+    "https://i.imgur.com/b5MJOiU.jpeg",
+    null,
+    null,
+    new Phaser.Math.Vector2(500, 500),
+    "mapbutton3",
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Green_icon_-_Help.ZGH.png/640px-Green_icon_-_Help.ZGH.png"
+  ),
+
+  4: new locationDetails(
+    "This is four",
+    4,
+    "background4",
+    "https://i.imgur.com/h8rBEkL.jpeg",
+    "collision4",
+    "https://i.imgur.com/h8rBEkL.jpeg",
+    null,
+    null,
+    new Phaser.Math.Vector2(500, 500),
+    "mapbutton4",
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Green_icon_-_Help.ZGH.png/640px-Green_icon_-_Help.ZGH.png"
+  ),
+
+  5: new locationDetails(
+    "This is five",
+    5,
+    "background5",
+    "https://i.imgur.com/wiMePq5.jpeg",
+    "collision5",
+    "https://i.imgur.com/wiMePq5.jpeg",
+    null,
+    null,
+    new Phaser.Math.Vector2(500, 500),
+    "mapbutton5",
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Green_icon_-_Help.ZGH.png/640px-Green_icon_-_Help.ZGH.png"
+  ),
+
+  6: new locationDetails(
+    "This is six",
+    6,
+    "background6",
+    "https://i.imgur.com/dyLSxir.jpeg",
+    "collision6",
+    "https://i.imgur.com/dyLSxir.jpeg",
+    null,
+    null,
+    new Phaser.Math.Vector2(500, 500),
+    "mapbutton6",
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/3/31/Konqueror-5.0.97-Deutsch%2BMen%C3%BC-Gehe_zu%2BGentoo-Linux%2BKDE-Plasma-5.18.5_2020-09-01.png/640px-Konqueror-5.0.97-Deutsch%2BMen%C3%BC-Gehe_zu%2BGentoo-Linux%2BKDE-Plasma-5.18.5_2020-09-01.png"
+  ),
+
+  7: new locationDetails(
+    "This is seven",
+    7,
+    "background7",
+    "https://i.imgur.com/YE0CjH7.jpeg",
+    "collision7",
+    "https://i.imgur.com/YE0CjH7.jpeg",
+    null,
+    null,
+    new Phaser.Math.Vector2(500, 500),
+    "mapbutton7",
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/3/31/Konqueror-5.0.97-Deutsch%2BMen%C3%BC-Gehe_zu%2BGentoo-Linux%2BKDE-Plasma-5.18.5_2020-09-01.png/640px-Konqueror-5.0.97-Deutsch%2BMen%C3%BC-Gehe_zu%2BGentoo-Linux%2BKDE-Plasma-5.18.5_2020-09-01.png"
+  ),
+
+  8: new locationDetails(
+    "This is eight",
+    8,
+    "background8",
+    "https://i.imgur.com/FiIFy3K.jpeg",
+    "collision8",
+    "https://i.imgur.com/FiIFy3K.jpeg",
+    null,
+    null,
+    new Phaser.Math.Vector2(500, 500),
+    "mapbutton8",
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/3/31/Konqueror-5.0.97-Deutsch%2BMen%C3%BC-Gehe_zu%2BGentoo-Linux%2BKDE-Plasma-5.18.5_2020-09-01.png/640px-Konqueror-5.0.97-Deutsch%2BMen%C3%BC-Gehe_zu%2BGentoo-Linux%2BKDE-Plasma-5.18.5_2020-09-01.png"
+  )
+};
+
+class menuOverlay extends Phaser.Scene {
+  constructor() {
+    super({ key: "menuOverlay" });
+  }
+
+  preload() {
+    this.load.image(
+      "icon1",
+      "https://static.wikia.nocookie.net/id5/images/d/d8/EntomologistPersonality.png"
+    );
+    this.load.image(
+      "icon2",
+      "https://static.wikia.nocookie.net/id5/images/d/d8/EntomologistPersonality.png"
+    );
+    this.load.image(
+      "icon3",
+      "https://static.wikia.nocookie.net/id5/images/d/d8/EntomologistPersonality.png"
+    );
+  }
+
+  create() {
+    // Create container to hold all menu elements
+    this.menuContainer = this.add.container(0, 0);
+
+    const graphics = this.add.graphics();
+    graphics.fillStyle(0x3e9be8, 0.9);
+    graphics.fillRect(0, 0, 145, this.game.config.height);
+    graphics.fillStyle(0x3e9be8, 0.5);
+    graphics.fillRect(0, 0, 160, this.game.config.height);
+    this.menuContainer.add(graphics);
+
+    this.registry.set("menuButtonHover", false);
+
+    const iconYPositions = [85, 195, 305];
+    const iconKeys = ["icon1", "icon2", "icon3"];
+    iconKeys.forEach((key, index) => {
+      const icon = this.add
+        .image(75, iconYPositions[index], key)
+        .setInteractive({ useHandCursor: true })
+        .setScale(0.5);
+
+      icon.on("pointerover", () => {
+        this.registry.set("menuButtonHover", true);
+        this.tweens.add({
+          targets: icon,
+          scaleX: 0.55,
+          scaleY: 0.55,
+          duration: 200,
+          ease: "Power1"
+        });
+      });
+
+      icon.on("pointerout", () => {
+        this.registry.set("menuButtonHover", false);
+        this.tweens.add({
+          targets: icon,
+          scaleX: 0.5,
+          scaleY: 0.5,
+          duration: 200,
+          ease: "Power1"
+        });
+      });
+
+      icon.on("pointerdown", () => {
+        console.log(`${key} clicked`);
+      });
+
+      this.menuContainer.add(icon);
+    });
+
+    const bottomIcon = this.add
+      .image(125, this.game.config.height - 120, "icon1")
+      .setInteractive({ useHandCursor: true })
+      .setScale(1);
+
+    bottomIcon.on("pointerover", () => {
+      this.registry.set("menuButtonHover", true);
+      this.tweens.add({
+        targets: bottomIcon,
+        scaleX: 1.05,
+        scaleY: 1.05,
+        duration: 200,
+        ease: "Power1"
+      });
+    });
+
+    bottomIcon.on("pointerout", () => {
+      this.registry.set("menuButtonHover", false);
+      this.tweens.add({
+        targets: bottomIcon,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 200,
+        ease: "Power1"
+      });
+    });
+
+    bottomIcon.on("pointerdown", () => {
+      const mainScene = this.scene.get("MainScene");
+      if (mainScene) mainScene.toggleMode();
+    });
+
+    this.menuContainer.add(bottomIcon);
+
+    this.scene.bringToTop();
+  }
+
+  //sliding transitions
+  slideOut() {
+    this.tweens.add({
+      targets: this.menuContainer,
+      x: -300,
+      duration: 400,
+      ease: "Power2"
+    });
+  }
+  slideIn() {
+    this.tweens.add({
+      targets: this.menuContainer,
+      x: 0,
+      duration: 400,
+      ease: "Power2"
+    });
+  }
+  resetPosition() {
+    if (this.menuContainer) {
+      this.menuContainer.x = 0;
+    }
+  }
+}
+
+class ZoomLocationScene extends Phaser.Scene {
+  constructor() {
+    super({ key: "ZoomLocationScene" });
+    this.startLocationId = 8; // default if none passed in
+  }
+
+  // Phaser automatically calls this when you start the scene with data
+  init(data) {
+    if (data.locationId) {
+      this.startLocationId = data.locationId;
+    }
+  }
+
+  preload() {
+    // Load all locations’ images (background, collision, etc.)
+    for (const id in locationRegistry) {
+      locationRegistry[id].preload(this);
+    }
+  }
+
+  create() {
+    // Open the location we were asked to view
+    this.openLocation(this.startLocationId);
+  }
+
+  openLocation(locationId) {
+  const loc = locationRegistry[locationId];
+  if (!loc) {
+    console.error("No location with ID:", locationId);
+    return;
+  }
+
+  // 🌄 Draw the background at 50% opacity
+  this.add.image(0, 0, loc.backgroundKey)
+    .setOrigin(0, 0)
+    .setScrollFactor(1)
+    .setAlpha(0.5);
+
+  // 🟩 Optional: collision overlay at 30% opacity
+  this.add.image(0, 0, loc.collisionKey)
+    .setOrigin(0, 0)
+    .setAlpha(0.3);
+
+  // 🔴 Place a red rectangle at spawn point
+  if (loc.spawnPoint) {
+    const spawnMarker = this.add.rectangle(
+      loc.spawnPoint.x,        // X position
+      loc.spawnPoint.y,        // Y position
+      40,                      // width
+      40,                      // height
+      0xff0000,                // fill color (red)
+      0.7                      // alpha
+    );
+    spawnMarker.setOrigin(0.5);
+    spawnMarker.setStrokeStyle(3, 0xffffff); // white outline
+  }
+
+  // 🔍 Get original background size
+  const source = this.textures.get(loc.backgroundKey)?.getSourceImage();
+  if (!source) {
+    console.error("Background image not found for", locationId);
+    return;
+  }
+
+  const bgWidth = source.width;
+  const bgHeight = source.height;
+
+  // 📷 Camera setup
+  const cam = this.cameras.main;
+  cam.setBounds(0, 0, bgWidth, bgHeight);
+
+  // 🔎 Zoom out to fit entire background in viewport
+  const zoomX = cam.width / bgWidth;
+  const zoomY = cam.height / bgHeight;
+  const zoom = Math.min(zoomX, zoomY);
+
+  cam.setZoom(zoom);
+  cam.centerOn(bgWidth / 2, bgHeight / 2);
+
+  // 🏷️ Optional label
+  this.add.text(10, 10, `Viewing: ${loc.name}`, {
+    font: "20px Arial",
+    color: "#ffffff",
+    backgroundColor: "rgba(0,0,0,0.5)"
+  }).setScrollFactor(0);
+}
+
+}
+
+
+
+const config = {
+  type: Phaser.AUTO,
+  width: 750 ,
+  height: 600,
+  backgroundColor: "#91caed",
+  scene: [ZoomLocationScene] // add scene here
+};
+const game = new Phaser.Game(config);
+game.scene.start("ZoomLocationScene", {locationId: 1});
+
+
+
