@@ -527,7 +527,6 @@ const config = {
   parent: "phaser-example",
   scene: [mainScene]
 };
-
 const game = new Phaser.Game(config);
 
 //helper functions for keybinding  in scene
