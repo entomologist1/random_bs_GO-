@@ -4,9 +4,42 @@ Q_Q
 i still need to make objects work like in general. and also make an inventory. and whatnot
 */
 
-const GAME_WIDTH = 800;
-const GAME_HEIGHT = 600;
-let PLAYER_INVENTORY = [];
+/*
+options:
+
+- make inventory of no items
+
+- add (item) to inventory
+- remove (item) from inventory
+- check if (itemKey) is in inventory
+- list all items
+*/
+class inventory {
+  constructor() {
+    this.items = [];
+  }
+
+  addItem(item) {
+    this.items.push(item);
+    console.log(`${item.spriteKey} added to inventory`);
+  }
+
+  removeItem(item) {
+    const index = this.items.indexOf(item);
+    if (index !== -1) {
+      this.items.splice(index, 1);
+      console.log(`${item.spriteKey} removed from inventory`);
+    }
+  }
+
+  hasItem(itemKey) {
+    return this.items.some(i => i.spriteKey === itemKey);
+  }
+
+  listItems() {
+    return this.items.map(i => i.spriteKey);
+  }
+}
 
 /*
 options:
@@ -480,6 +513,11 @@ let areaInfo = {
   )
 };
 
+//global constants
+const GAME_WIDTH = 800;
+const GAME_HEIGHT = 600;
+const playerInventory = new inventory();
+
 // config
 const config = {
   type: Phaser.AUTO,
@@ -492,10 +530,11 @@ const config = {
 
 const game = new Phaser.Game(config);
 
-//helper functions for keybinding
+//helper functions for keybinding  in scene
 
 //save the keybinding
 let KEY_BINDINGS = {};
+//register a keybind for the current scene
 function registerKey(scene, keyName) {
   if (!KEY_BINDINGS[keyName]) {
     KEY_BINDINGS[keyName] = scene.input.keyboard.addKey(
@@ -504,26 +543,22 @@ function registerKey(scene, keyName) {
   }
   return KEY_BINDINGS[keyName];
 }
-
-//Callback for when key is pressed down
+//Callback for when key is pressed down in scene
 function addKeyInput(scene, keyName, callback) {
   registerKey(scene, keyName);
   scene.input.keyboard.on(`keydown-${keyName}`, callback);
 }
-
-//Callback for when key is released
+//Callback for when key is released in scene
 function addKeyRelease(scene, keyName, callback) {
   registerKey(scene, keyName);
   scene.input.keyboard.on(`keyup-${keyName}`, callback);
 }
-
-//Returns whether key was held dowm
+//Returns whether key was held dowm in scene
 function isKeyDown(scene, keyName) {
   const key = registerKey(scene, keyName);
   return key.isDown;
 }
-
-//Returns whether key was just released
+//Returns whether key was just released in scene
 function isKeyUp(scene, keyName) {
   const key = registerKey(scene, keyName);
   return Phaser.Input.Keyboard.JustUp(key);
