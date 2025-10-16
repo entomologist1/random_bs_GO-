@@ -8,71 +8,97 @@ const GAME_WIDTH = 800;
 const GAME_HEIGHT = 600;
 let PLAYER_INVENTORY = [];
 
-//manager for area objs
-class ObjectManager {
+/*
+options:
+- create objectManager with (scene)
+
+- set (area) and load all objects in it
+- add (areaObject) to current area
+- remove (areaObject) from current area
+- clear all areaObjects from current area
+- move (areaObject) to a (newPosition) with an animation of length (duration) in current area
+- enable interaction for (areaObject) in current area
+- disable interaction for (areaObject) in current area
+- get areaObjects of (type) in current area
+- get areaObjects of (key) in current area
+*/
+class objectManager {
   constructor(scene) {
-    this.scene = scene; 
-    this.objects = [];
+    this.scene = scene;
+    this.currentArea = null;
+  }
+
+  setArea(area) {
+    if (!(area instanceof Area)) {
+      console.warn("provide a valid Area");
+      return;
+    }
+
+    //clear previous objects from scene
+    if (this.currentArea) {
+      this.currentArea.objects.forEach((obj) => obj.destroy());
+    }
+
+    this.currentArea = area;
+
+    //spawn all objects in the scene
+    this.currentArea.objects.forEach((obj) => obj.spawn(this.scene));
   }
 
   addObject(areaObject) {
-    if (!(areaObject instanceof AreaObject)) {
-      console.warn("must be area obj");
+    if (!this.currentArea) {
+      console.warn("No current area set");
       return;
     }
-    areaObject.spawn(this.scene);
-    this.objects.push(areaObject);
-    return areaObject;
-  }
 
-  moveObject(areaObject, newPosition) {
-    if (!areaObject.sprite) {
-      console.warn("area obj not found");
-      return;
-    }
-    areaObject.position = newPosition;
-    areaObject.sprite.setPosition(newPosition.x, newPosition.y);
+    const obj = this.currentArea.addObject(areaObject);
+    if (obj) obj.spawn(this.scene);
+    return obj;
   }
 
   removeObject(areaObject) {
-    if (!areaObject.sprite) {
-      console.warn("area obj not found");
-      return;
-    }
-    const i = this.objects.indexOf(areaObject);
-    if (i !== -1) {
-      areaObject.destroy();
-      this.objects.splice(i, 1);
-    }
-  }
+    if (!this.currentArea) return;
 
-  enableInteraction(areaObject) {
-    if (!areaObject.sprite) {
-      console.warn("area obj not found");
-      return;
-    }
-    areaObject.interactionEnabled = true;
-  }
-
-  disableInteraction(areaObject) {
-    if (!areaObject.sprite) {
-      console.warn("area obj not found");
-      return;
-    }
-    areaObject.interactionEnabled = false;
-  }
-
-  getObjectsByType(type) {
-    return this.objects.filter(o => o.type === type);
-  }
-
-  getObjectByKey(spriteKey) {
-    return this.objects.find(o => o.spriteKey === spriteKey);
+    areaObject.destroy();
+    this.currentArea.removeObject(areaObject);
   }
 
   clearAll() {
-    this.objects.forEach(o => o.destroy());
-    this.objects = [];
+    if (!this.currentArea) return;
+
+    this.currentArea.objects.forEach((obj) => obj.destroy());
+    this.currentArea.clearObjects();
+  }
+
+  moveObject(areaObject, newPosition, duration = 500) {
+    if (!this.currentArea || !this.currentArea.objects.includes(areaObject))
+      return;
+
+    areaObject.move(newPosition, duration);
+  }
+
+  enableInteraction(areaObject) {
+    if (!this.currentArea || !this.currentArea.objects.includes(areaObject))
+      return;
+
+    areaObject.enableInteraction();
+  }
+
+  disableInteraction(areaObject) {
+    if (!this.currentArea || !this.currentArea.objects.includes(areaObject))
+      return;
+
+    areaObject.disableInteraction();
+  }
+
+  getObjectsByType(type) {
+    if (!this.currentArea) return [];
+    return this.currentArea.getObjectsByType(type);
+  }
+
+  getObjectByKey(spriteKey) {
+    if (!this.currentArea) return null;
+    return this.currentArea.getObjectByKey(spriteKey);
   }
 }
 
@@ -100,39 +126,40 @@ class mainScene extends Phaser.Scene {
 
   create() {
     //create the objectManager (this handles all areas)
-    this.objectManager = new ObjectManager(this);
+    this.objectManager = new objectManager(this);
 
     //load first area (by default/init its 1)
     this.reloadNewArea(this.currentAreaIndex);
 
     //DEBUG: cycle areas  right arrow
     addKeyInput(this, "RIGHT", () => {
-    this.currentAreaIndex++;
-    if (this.currentAreaIndex > Object.keys(areaInfo).length) {
-      this.currentAreaIndex = 1;
-    }
-    this.reloadNewArea(this.currentAreaIndex);
-  });
+      this.currentAreaIndex++;
+      if (this.currentAreaIndex > Object.keys(areaInfo).length) {
+        this.currentAreaIndex = 1;
+      }
+      this.reloadNewArea(this.currentAreaIndex);
+    });
   }
 
   update() {
     this.updateCameraFollow();
   }
 
-  //handles moving between areas 
-  reloadNewArea(index, spawnPoint = 0) { //default spawn is the first one on list
+  //handles moving between areas
+  reloadNewArea(index, spawnPoint = 0) {
+    //default spawn is the first one on list
     this.loadArea(index);
     this.loadAreaObjects(index);
     this.loadPlayerMovement?.();
     this.setupCamera(index, spawnPoint);
   }
-  
+
   //these are helpers for reloadNewArea aka my personal checklist lol
-  
+
   setupCamera(index, spawnPointIndex = 0) {
     //camera follows a zone tied to mouse and bound by bg width/height
     //
-    
+
     const area = areaInfo[index];
     this.camera = this.cameras.main;
     let currentSpawn = area.spawnPoints[spawnPointIndex];
@@ -163,16 +190,19 @@ class mainScene extends Phaser.Scene {
 
   updateCameraFollow() {
     //this moves the zone whenever pointer is at an edge
-    
+
     if (!this.input.activePointer) return;
     const pointer = this.input.activePointer;
-    let moveX = 0, moveY = 0;
+    let moveX = 0,
+      moveY = 0;
 
     if (pointer.x < this.edgeThreshold) moveX = -this.scrollSpeed;
-    else if (pointer.x > GAME_WIDTH - this.edgeThreshold) moveX = this.scrollSpeed;
+    else if (pointer.x > GAME_WIDTH - this.edgeThreshold)
+      moveX = this.scrollSpeed;
 
     if (pointer.y < this.edgeThreshold) moveY = -this.scrollSpeed;
-    else if (pointer.y > GAME_HEIGHT - this.edgeThreshold) moveY = this.scrollSpeed;
+    else if (pointer.y > GAME_HEIGHT - this.edgeThreshold)
+      moveY = this.scrollSpeed;
 
     if (moveX || moveY) {
       this.cameraTarget.x = Phaser.Math.Clamp(
@@ -190,7 +220,7 @@ class mainScene extends Phaser.Scene {
 
   loadArea(index) {
     //area loading lol
-    
+
     const area = areaInfo[index];
     if (!area) return;
 
@@ -200,21 +230,19 @@ class mainScene extends Phaser.Scene {
 
     //and make current one
     this.backgroundImage = this.add.image(0, 0, "bg" + index).setOrigin(0, 0);
-    this.areaText = this.add.text(20, 20, area.areaName, {
-      fontSize: "24px", fill: "#fff"
-    }).setScrollFactor(0);
+    this.areaText = this.add
+      .text(20, 20, area.areaName, {
+        fontSize: "24px",
+        fill: "#fff"
+      })
+      .setScrollFactor(0);
   }
 
   loadAreaObjects(index) {
-    //loading objs via objectManager
     const area = areaInfo[index];
     if (!area) return;
 
-    this.objectManager.clearAll();
-    for (const obj of area.objects) {
-      this.objectManager.addObject(obj);
-    }
-
+    this.objectManager.setArea(area);
   }
 
   loadPlayerMovement() {
@@ -223,7 +251,25 @@ class mainScene extends Phaser.Scene {
   }
 }
 
-//area & etc classes 
+//area & etc classes
+
+/*
+options: 
+- create object of (type), with appearance (spriteKey) on (spritePath) in (position)
+
+- spawn in (scene)
+- move to (newPosition) with a glide of (duration) ms
+
+- interact 
+- interactInspect
+- interactUse
+- interactTalk
+
+- enable interaction
+- disable interaction
+
+- destroy object
+*/
 class AreaObject {
   constructor(type, spriteKey, spritePath, position) {
     this.type = type;
@@ -244,8 +290,55 @@ class AreaObject {
     );
   }
 
-  interact() { console.log("interactable"); }
-  interactInspect() { console.log("inspectable"); }
+  move(newPosition, duration = 500) {
+    if (!(newPosition instanceof Phaser.Math.Vector2)) {
+      console.warn("newPosition must be a Phaser.Math.Vector2");
+      return;
+    }
+    this.position = newPosition;
+
+    if (this.sprite && this.scene) {
+      this.scene.tweens.add({
+        targets: this.sprite,
+        x: newPosition.x,
+        y: newPosition.y,
+        duration: duration,
+        ease: "Power2"
+      });
+    }
+  }
+
+  interact() {
+    if (!this.interactionEnabled)
+      return console.log(`${this.spriteKey} is not interactable`);
+    console.log(`Interacting with ${this.spriteKey}`);
+  }
+
+  interactInspect() {
+    if (!this.interactionEnabled)
+      return console.log(`${this.spriteKey} cannot be inspected`);
+    console.log(`Inspecting ${this.spriteKey}`);
+  }
+
+  interactUse() {
+    if (!this.interactionEnabled)
+      return console.log(`${this.spriteKey} cannot be used`);
+    console.log(`Using ${this.spriteKey}`);
+  }
+
+  interactTalk() {
+    if (!this.interactionEnabled)
+      return console.log(`${this.spriteKey} cannot be talked to`);
+    console.log(`Talking to ${this.spriteKey}`);
+  }
+
+  enableInteraction() {
+    this.interactionEnabled = true;
+  }
+
+  disableInteraction() {
+    this.interactionEnabled = false;
+  }
 
   destroy() {
     if (this.sprite) {
@@ -255,6 +348,16 @@ class AreaObject {
   }
 }
 
+/*
+options:
+- create area of (areaName) with (background) holding (objects) with certain (spawnPoints) for player
+
+- add (areaObject) to area
+- remmove (areaObject) to area
+- clear all objects from area
+- get all (areaObject) by its type
+- get (areaObject) by its key
+*/
 class Area {
   constructor(
     areaName = "defaultName",
@@ -267,17 +370,65 @@ class Area {
     this.objects = objects;
     this.spawnPoints = spawnPoints;
   }
+
+  addObject(areaObject) {
+    if (!(areaObject instanceof AreaObject)) {
+      console.warn("Can only add instances of AreaObject");
+      return;
+    }
+    this.objects.push(areaObject);
+    return areaObject;
+  }
+
+  removeObject(areaObject) {
+    const index = this.objects.indexOf(areaObject);
+    if (index === -1) {
+      console.warn("Object not found in this area");
+      return;
+    }
+    this.objects.splice(index, 1);
+  }
+
+  clearObjects() {
+    this.objects = [];
+  }
+
+  getObjectsByType(type) {
+    return this.objects.filter((obj) => obj.type === type);
+  }
+
+  getObjectByKey(spriteKey) {
+    return this.objects.find((obj) => obj.spriteKey === spriteKey);
+  }
 }
 
+/*
+options:
+- create Player of (mode) (aka if they're being controlled by player or not)
+*/
+/*
+modes:
+- follow - player follows mouse with range of (100)px
+- idle - player is idle
+
+- locked - player is not available for movement (ie cutscene)
+*/
 class Player {
-  constructor(inputGiven = null, mode = "default") {
-    this.inputGiven = inputGiven;
+  constructor(mode = "follow") {
     this.mode = mode;
   }
-  move() { if (this.inputGiven) console.log("playerMovement active"); }
-  switchMode() { if (this.inputGiven) console.log("switch mode"); }
-  togglePlayer() { if (this.inputGiven) console.log("toggle player input"); }
-  untogglePlayer() { if (this.inputGiven) console.log("untoggle player input"); }
+  move() {
+    if (this.mode == "follow") console.log("playerMovement active");
+  }
+  switchMode() {
+    console.log("switch mode");
+  }
+  togglePlayer() {
+    if (this.mode == "follow") console.log("toggle player input");
+  }
+  untogglePlayer() {
+    if (this.mode == "follow") console.log("untoggle player input");
+  }
 }
 
 // area info
@@ -286,26 +437,46 @@ let areaInfo = {
     "area one",
     "https://images.pexels.com/photos/1590549/pexels-photo-1590549.jpeg?cs=srgb&dl=pexels-iriser-1590549.jpg&fm=jpg",
     [
-      new AreaObject("npc","npc1","assets/npc1.png",new Phaser.Math.Vector2(200,300)),
-      new AreaObject("item","chest","assets/chest.png",new Phaser.Math.Vector2(500,400))
+      new AreaObject(
+        "npc",
+        "npc1",
+        "assets/npc1.png",
+        new Phaser.Math.Vector2(200, 300)
+      ),
+      new AreaObject(
+        "item",
+        "chest",
+        "assets/chest.png",
+        new Phaser.Math.Vector2(500, 400)
+      )
     ],
-    [new Phaser.Math.Vector2(1000,1000)]
+    [new Phaser.Math.Vector2(1000, 1000)]
   ),
   2: new Area(
     "area two",
     "https://static.vecteezy.com/system/resources/previews/017/646/920/non_2x/flower-garden-bokeh-soft-light-abstract-background-eps-10-illustration-bokeh-particles-background-decoration-vector.jpg",
     [
-      new AreaObject("npc","npc2","assets/npc2.png",new Phaser.Math.Vector2(250,250))
+      new AreaObject(
+        "npc",
+        "npc2",
+        "assets/npc2.png",
+        new Phaser.Math.Vector2(250, 250)
+      )
     ],
-    [new Phaser.Math.Vector2(0,500)]
+    [new Phaser.Math.Vector2(0, 500)]
   ),
   3: new Area(
     "area three",
     "https://codetheweb.blog/assets/img/posts/css-advanced-background-images/cover.jpg",
     [
-      new AreaObject("item","potion","assets/potion.png",new Phaser.Math.Vector2(400,500))
+      new AreaObject(
+        "item",
+        "potion",
+        "assets/potion.png",
+        new Phaser.Math.Vector2(400, 500)
+      )
     ],
-    [new Phaser.Math.Vector2(200,0)]
+    [new Phaser.Math.Vector2(200, 0)]
   )
 };
 
@@ -327,11 +498,12 @@ const game = new Phaser.Game(config);
 let KEY_BINDINGS = {};
 function registerKey(scene, keyName) {
   if (!KEY_BINDINGS[keyName]) {
-    KEY_BINDINGS[keyName] = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes[keyName]);
+    KEY_BINDINGS[keyName] = scene.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes[keyName]
+    );
   }
   return KEY_BINDINGS[keyName];
 }
-
 
 //Callback for when key is pressed down
 function addKeyInput(scene, keyName, callback) {
@@ -339,13 +511,11 @@ function addKeyInput(scene, keyName, callback) {
   scene.input.keyboard.on(`keydown-${keyName}`, callback);
 }
 
-
 //Callback for when key is released
 function addKeyRelease(scene, keyName, callback) {
   registerKey(scene, keyName);
   scene.input.keyboard.on(`keyup-${keyName}`, callback);
 }
-
 
 //Returns whether key was held dowm
 function isKeyDown(scene, keyName) {
